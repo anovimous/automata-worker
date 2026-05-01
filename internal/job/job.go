@@ -9,9 +9,31 @@ type Job struct {
 type JobState string
 
 const (
-	StateRunning  JobState = "RUNNING"
-	StatePaused   JobState = "PAUSED"
-	StateCanceled JobState = "CANCELED"
-	StateFinished JobState = "FINISHED"
-	StateFailed   JobState = "FAILED"
+	StateQueued     JobState = "QUEUED"
+	StateRunning    JobState = "RUNNING"
+	StatePaused     JobState = "PAUSED"
+	StateCanceled   JobState = "CANCELED"
+	StateFinished   JobState = "FINISHED"
+	StateFailed     JobState = "FAILED"
+	StateTerminated JobState = "TERMINATED"
 )
+
+type JobMessage struct {
+	Typ    MessageType
+	State  JobState
+	Result JobResult
+}
+
+type MessageType string
+
+const (
+	MessageHeartbeat    MessageType = "heartbeat"
+	MessageStateUpdate  MessageType = "stateUpdate"
+	MessageFinishResult MessageType = "finish"
+)
+
+type JobResult struct {
+	ResultFilePath string
+	Message        string
+	FinishState    JobState
+}
