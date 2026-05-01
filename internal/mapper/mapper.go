@@ -6,35 +6,40 @@ import (
 	"os"
 )
 
-var mappings = map[string]string{}
+type Mapper struct {
+	mappings map[string]string
+}
 
 type KeyPath struct {
 	Key  string `json:"key"`
 	Path string `json:"path"`
 }
 
-func Load(mappingFileLocation string) error {
+func Load(mappingFileLocation string) (*Mapper, error) {
+
+	mappings := map[string]string{}
 
 	data, err := os.ReadFile(mappingFileLocation)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	var allKeyPath []KeyPath
 
 	if err := json.Unmarshal(data, &allKeyPath); err != nil {
-		return fmt.Errorf("failed to parse mappings file: %w", err)
+		return nil, fmt.Errorf("failed to parse mappings file: %w", err)
 	}
 
 	for _, keyPath := range allKeyPath {
 		mappings[keyPath.Key] = keyPath.Path
 	}
 
-	return nil
+	return &Mapper{mappings: mappings}, nil
 }
 
-func Lookup(routineKey string) (string, error) {
-	path, ok := mappings[routineKey]
+func (m *Mapper) Lookup(routineKey string) (string, error) {
+
+	path, ok := m.mappings[routineKey]
 	if !ok {
 		return "", fmt.Errorf("no mapping found for routineKey: %s", routineKey)
 	}
