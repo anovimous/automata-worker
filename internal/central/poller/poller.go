@@ -19,7 +19,7 @@ type Poller struct {
 }
 
 type PollInfo struct {
-	DesiredState job.JobState
+	DesiredState job.JobState `json:"requestedState"`
 }
 
 func New(baseURL, stateEndpoint string, pollInterval int) *Poller {
@@ -49,7 +49,7 @@ func (p *Poller) SinglePoll(jobId int) (PollInfo, error) {
 	return info, nil
 }
 
-func (p *Poller) Start(jobId int, ctx context.Context) (<-chan PollInfo, error) {
+func (p *Poller) Start(jobId int, ctx context.Context) <-chan PollInfo {
 
 	currentState := job.StateRunning
 
@@ -79,5 +79,5 @@ func (p *Poller) Start(jobId int, ctx context.Context) (<-chan PollInfo, error) 
 		}
 	}()
 
-	return infoCh, nil
+	return infoCh
 }
