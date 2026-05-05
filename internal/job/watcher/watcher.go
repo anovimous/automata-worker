@@ -16,7 +16,7 @@ func New(heartBeatTimeoutSecs int) *Watcher {
 	return &Watcher{heartBeatTimeoutSecs: heartBeatTimeoutSecs}
 }
 
-func (w *Watcher) Watch(fmtMessagesCh <-chan job.JobMessage) (completionResult <-chan job.JobResult, stateUpdate <-chan job.JobState, timeout <-chan bool, e error) {
+func (w *Watcher) Watch(fmtMessagesCh <-chan job.JobMessage) (completionResult <-chan job.JobResult, stateUpdate <-chan job.JobState, timeout <-chan bool) {
 
 	completionResultBi := make(chan job.JobResult, 1)
 	stateUpdateBi := make(chan job.JobState)
@@ -46,5 +46,5 @@ func (w *Watcher) Watch(fmtMessagesCh <-chan job.JobMessage) (completionResult <
 
 	}()
 
-	return completionResultBi, stateUpdateBi, timeoutBi, nil
+	return completionResultBi, stateUpdateBi, timeoutBi
 }
