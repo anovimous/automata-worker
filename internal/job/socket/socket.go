@@ -42,12 +42,17 @@ func New(socketDir string, mode rune) (offSocket *Socket, e error) {
 
 }
 
-func AcceptConns(s1 *Socket, s2 *Socket) (*Socket, *Socket, error, error) {
+func AcceptConns(s1 *Socket, s2 *Socket, timeoutSecs int) (*Socket, *Socket, error, error) {
 	var (
 		wg           sync.WaitGroup
 		conn1, conn2 net.Conn
 		e1, e2       error
 	)
+
+	deadline := time.Now().Add(time.Duration(timeoutSecs) * time.Second)
+
+	s1.Listener.(*net.UnixListener).SetDeadline(deadline)
+	s2.Listener.(*net.UnixListener).SetDeadline(deadline)
 
 	wg.Add(2)
 
@@ -63,6 +68,10 @@ func AcceptConns(s1 *Socket, s2 *Socket) (*Socket, *Socket, error, error) {
 
 	wg.Wait()
 
+	// reset deadlines so listeners are reusable for next job
+	s1.Listener.(*net.UnixListener).SetDeadline(time.Time{})
+	s2.Listener.(*net.UnixListener).SetDeadline(time.Time{})
+
 	if e1 != nil || e2 != nil {
 		return nil, nil, e1, e2
 	}
@@ -71,10 +80,9 @@ func AcceptConns(s1 *Socket, s2 *Socket) (*Socket, *Socket, error, error) {
 	s2.Connection = conn2
 
 	return s1, s2, e1, e2
-
 }
 
-func (s *Socket) Listen(ctx context.Context) (<-chan job.JobMessage, error) {
+func (s *Socket) Listen(ctx context.Context) <-chan job.JobMessage {
 
 	msgCh := make(chan job.JobMessage)
 
@@ -111,7 +119,7 @@ func (s *Socket) Listen(ctx context.Context) (<-chan job.JobMessage, error) {
 		}
 	}()
 
-	return msgCh, nil
+	return msgCh
 }
 
 func (s *Socket) SendState(desiredState job.JobState) error {
