@@ -168,7 +168,7 @@ func (s *SDK) Finish(resultPath string) {
 		Type: "finish",
 		Result: jobResult{
 			ResultFilePath: resultPath,
-			FinishState:    "finished",
+			FinishState:    "FINISHED",
 		},
 	})
 
@@ -183,7 +183,7 @@ func (s *SDK) Fail(message string) {
 		Type: "finish",
 		Result: jobResult{
 			Message:     message,
-			FinishState: "failed",
+			FinishState: "FAILED",
 		},
 	})
 
