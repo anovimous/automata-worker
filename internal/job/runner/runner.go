@@ -12,10 +12,13 @@ import (
 
 type Runner struct {
 	heartbeatInterval int
+	tmpDir            string
 }
 
-func New(cfg config.WorkerConfig) *Runner {
-	return &Runner{cfg.HeartbeatInterval}
+func New(cfg config.WorkerConfig, tmpDir string) *Runner {
+	return &Runner{heartbeatInterval: cfg.HeartbeatInterval,
+		tmpDir: tmpDir,
+	}
 }
 
 func (r *Runner) Start(jobId int, command string, detailsLocation string, dataLocation string, offReadSocket *socket.Socket, offWriteSocket *socket.Socket) (*process.Process, error) {
@@ -23,9 +26,10 @@ func (r *Runner) Start(jobId int, command string, detailsLocation string, dataLo
 		"--jobId", fmt.Sprintf("%d", jobId),
 		"--details", detailsLocation,
 		"--data", dataLocation,
-		"--readSocket", offReadSocket.Path,
-		"--writeSocket", offWriteSocket.Path,
+		"--readSocket", offWriteSocket.Path, // intentional switching, read for process but write for orch
+		"--writeSocket", offReadSocket.Path,
 		"--heartbeatInterval", fmt.Sprintf("%d", r.heartbeatInterval),
+		"--tmpDir", r.tmpDir,
 	}
 
 	parts := strings.Fields(command)
