@@ -19,9 +19,9 @@ const (
 )
 
 type JobMessage struct {
-	Typ    MessageType
-	State  JobState
-	Result JobResult
+	Typ    MessageType `json:"type"`
+	State  JobState    `json:"newState"`
+	Result JobResult   `json:"result"`
 }
 
 type MessageType string
@@ -33,7 +33,7 @@ const (
 )
 
 type JobResult struct {
-	ResultFilePath string
-	Message        string
-	FinishState    JobState
+	ResultFilePath string   `json:"resultPath"`
+	Message        string   `json:"message"`
+	FinishState    JobState `json:"finishState"`
 }
