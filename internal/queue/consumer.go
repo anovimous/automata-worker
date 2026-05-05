@@ -14,7 +14,7 @@ type Consumer struct {
 }
 
 type Message struct {
-	JobId      string `json:"jobId"`
+	JobId      int    `json:"jobId"`
 	RoutineKey string `json:"routineKey"`
 }
 
@@ -41,7 +41,12 @@ func New(cfg config.RabbitMQConfig) (*Consumer, error) {
 		false,
 		false,
 		false,
-		nil)
+		amqp.Table{
+			"x-max-priority": int32(2),
+		})
+	if err != nil {
+		return nil, fmt.Errorf("failed to declare queue: %w", err)
+	}
 
 	return &Consumer{
 		connection: conn,
