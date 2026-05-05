@@ -23,9 +23,6 @@ func Load() (config *Config, error error) {
 			JobsBucket:    os.Getenv("RUSTFS_JOBS_BUCKET"),
 			ResultsBucket: os.Getenv("RUSTFS_RESULTS_BUCKET"),
 		},
-		Redis: RedisConfig{
-			URL: os.Getenv("REDIS_URL"),
-		},
 		Central: CentralConfig{
 			BaseURL:         os.Getenv("CENTRAL_BASE_URL"),
 			PollInterval:    toInt(os.Getenv("CENTRAL_POLL_INTERVAL_SECONDS")),
@@ -50,7 +47,6 @@ func toInt(s string) int {
 type Config struct {
 	RabbitMQ     RabbitMQConfig
 	RustFS       RustFSConfig
-	Redis        RedisConfig
 	Central      CentralConfig
 	Worker       WorkerConfig
 	TempDir      string
