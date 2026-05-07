@@ -18,7 +18,7 @@ type Informer struct {
 
 type informMessage struct {
 	JobId int          `json:"jobId"`
-	State job.JobState `json:"state"`
+	State job.JobState `json:"newState"`
 	Msg   string       `json:"message"`
 }
 
