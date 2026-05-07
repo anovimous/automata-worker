@@ -4,9 +4,11 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	log "log/slog"
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/anovimous/sdkconnector/internal/parser"
@@ -16,20 +18,20 @@ import (
 var allowedFlags = []string{"-H", "-X", "-b", "-cc", "-ck", "-d", "-http2", "-ignore-body", "-r", "-raw", "-recursion", "-recursion-depth", "-recursion-strategy", "-replay-proxy", "-sni", "-timeout", "-u", "-x", "-V", "-ac", "-acc", "-ach", "-ack", "-acs", "-c", "-config", "-json", "-maxtime", "-maxtime-job", "-noninteractive", "-p", "-rate", "-s", "-sa", "-scraperfile", "-scrapers", "-se", "-search", "-sf", "-t", "-v", "-mc", "-ml", "-mmode", "-mr", "-ms", "-mt", "-mw", "-fc", "-fl", "-fmode", "-fr", "-fs", "-ft", "-fw", "-D", "-e", "-enc", "-ic", "-input-cmd", "-input-num", "-input-shell", "-mode", "-request", "-request-proto", "-w", "-debug-log", "-o", "-od", "-of", "-or"}
 
 type ffufCustomConfig struct {
-	rawRequestBase64 string
-	flags            []parser.Flag
+	RawRequestBase64 string        `json:"rawRequestBase64"`
+	Flags            []parser.Flag `json:"flags"`
 }
 
-func BuildCommand(j *parser.JobDetails, tmpDir string) (command string, outputFilePath string, e error) {
+func BuildCommand(j *parser.JobDetails, tmpDir string) (command string, args []string, outputFilePath string, e error) {
 
 	var customConfig ffufCustomConfig
 
 	err := json.Unmarshal(j.CustomConfig, &customConfig)
 	if err != nil {
-		return "", "", fmt.Errorf("JobDetails.CustomConfig is not of allowed form for this routine: %w", err)
+		return "", nil, "", fmt.Errorf("JobDetails.CustomConfig is not of allowed form for this routine: %w", err)
 	}
 
-	parts := []string{"ffuf"}
+	parts := []string{}
 
 	outputFileName := fmt.Sprintf("%s.json", uuid.New().String())
 
@@ -39,7 +41,13 @@ func BuildCommand(j *parser.JobDetails, tmpDir string) (command string, outputFi
 
 	parts = append(parts, "-w", j.WordListPath)
 
-	parts = append(parts, "-b", buildCookieString(j.Auth.Data.Cookies))
+	parts = append(parts, "-rate", strconv.Itoa(j.Rate))
+
+	parts = append(parts, "-noninteractive")
+
+	if len(j.Auth.Data.Cookies) > 0 {
+		parts = append(parts, "-b", buildCookieString(j.Auth.Data.Cookies))
+	}
 
 	for _, header := range j.Auth.Data.Headers {
 		parts = append(parts, "-H", buildHeader(header))
@@ -51,29 +59,29 @@ func BuildCommand(j *parser.JobDetails, tmpDir string) (command string, outputFi
 		}
 	}
 
-	for _, flag := range customConfig.flags {
+	for _, flag := range customConfig.Flags {
 		if !slices.Contains(allowedFlags, flag.Key) {
-			return "", "", fmt.Errorf("Unknown flag provided in custom config")
+			return "", nil, "", fmt.Errorf("Unknown flag provided in custom config")
 		}
 		parts = append(parts, flag.Key, flag.Value)
 	}
 
-	rawRequest, err := base64.StdEncoding.DecodeString(customConfig.rawRequestBase64)
+	rawRequestBytes, err := base64.StdEncoding.DecodeString(customConfig.RawRequestBase64)
 	if err != nil {
-		return "", "", fmt.Errorf("Corrupted base64 format provided in custom config")
+		return "", nil, "", fmt.Errorf("Corrupted base64 format provided in custom config")
 	}
-
+	log.Info("CONNECTOR.BUILDER:", "rawRequestbase64", customConfig.RawRequestBase64)
 	requestFileName := fmt.Sprintf("%s.raw", uuid.New().String())
 
 	requestFilePath := filepath.Join(tmpDir, requestFileName)
 
-	err = os.WriteFile(requestFilePath, []byte(rawRequest), 0666)
+	err = os.WriteFile(requestFilePath, rawRequestBytes, 0666)
 	if err != nil {
-		return "", "", fmt.Errorf("Failed to store the request temporarily on the FS")
+		return "", nil, "", fmt.Errorf("Failed to store the request temporarily on the FS")
 	}
 	parts = append(parts, "-request", requestFilePath)
 
-	return strings.Join(parts, " "), outputFilePath, nil
+	return "ffuf", parts, outputFilePath, nil
 
 }
 
