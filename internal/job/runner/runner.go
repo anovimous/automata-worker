@@ -2,8 +2,10 @@ package runner
 
 import (
 	"fmt"
+	log "log/slog"
 	"os/exec"
 	"strings"
+	"syscall"
 
 	"github.com/anovimous/orchestrator/internal/config"
 	"github.com/anovimous/orchestrator/internal/job/process"
@@ -38,6 +40,13 @@ func (r *Runner) Start(jobId int, command string, detailsLocation string, dataLo
 	}
 
 	cmd := exec.Command(parts[0], append(parts[1:], args...)...)
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	log.Info("full command ran by orchestrator.Runner.Start():" + cmd.String())
+
+	cmd.Dir = "/home/haidar/dev/automata-components/connector" // DEV ONLY
+	cmd.Stdin = nil
+	cmd.Stdout = nil // DEV ONLY
+	cmd.Stderr = nil // DEV ONLY
 
 	if err := cmd.Start(); err != nil {
 		return nil, fmt.Errorf("failed to start process for job %d: %w", jobId, err)
