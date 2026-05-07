@@ -12,6 +12,7 @@ import (
 type JobDetails struct {
 	JobId         int             `json:"jobId"`
 	RoutineKey    string          `json:"routineKey"`
+	Rate          int             `json:"rate"`
 	Verbosity     string          `json:"verbosity"`
 	Auth          AuthDataWrapper `json:"auth"`
 	TargetType    string          `json:"targetType"`
