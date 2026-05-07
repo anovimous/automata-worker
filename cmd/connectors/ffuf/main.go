@@ -2,8 +2,9 @@ package main
 
 import (
 	"fmt"
-	"log/slog"
+	log "log/slog"
 	"os"
+	"strings"
 
 	"github.com/anovimous/sdkconnector/internal/parser"
 	"github.com/anovimous/sdkconnector/internal/runner"
@@ -12,25 +13,28 @@ import (
 )
 
 func main() {
+
+	log.Info("FFUF CONNECTOR STARTED")
+
 	s, err := sdk.New()
 	if err != nil {
-		slog.Error("failed to initialize sdk", "error", err)
+		log.Error("failed to initialize sdk", "error", err)
 		os.Exit(1)
 	}
-
+	log.Info("SDK INITIALIZED")
 	jobDetails, err := parser.Parse(s.DetailsPath())
 	if err != nil {
-		slog.Error("failed to parse job details", "error", err)
+		log.Error("failed to parse job details", "error", err)
 		s.Fail(fmt.Sprintf("failed to parse job details: %v", err))
 		os.Exit(1)
 	}
-
+	log.Info("JOB DETAILS PARSED")
 	tmpDir := s.TmpDirectory()
 
-	command, outputFilePath, err := BuildCommand(jobDetails, tmpDir)
-
-	if err := runner.Run(s, command, outputFilePath); err != nil {
-		slog.Error("manager run failed", "jobId", s.JobId(), "error", err)
+	command, args, outputFilePath, err := BuildCommand(jobDetails, tmpDir)
+	log.Info("GOING TO EXECUTE CONNECTOR RUNNER.RUN WITH THE COMMAND", "command", command, "args", strings.Join(args, " "), "outputFilePath", outputFilePath)
+	if err := runner.Run(s, command, args, outputFilePath); err != nil {
+		log.Error("manager run failed", "jobId", s.JobId(), "error", err)
 		os.Exit(1)
 	}
 }
