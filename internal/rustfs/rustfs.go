@@ -38,17 +38,17 @@ func (r *Rustfs) DownloadJobDetailsAndData(jobId int) (detailsLocalLoc string, d
 
 	err := r.client.FGetObject(context.Background(), r.cfg.JobsBucket, detailsRemoteObjectName, detailsLocalTargetPath, minio.GetObjectOptions{})
 	if err != nil {
-		return "", "", fmt.Errorf("failed to download job details for job %d: %w", jobId, err)
+		return "", "", fmt.Errorf("failed to download job DETAILS for job %d: %w", jobId, err)
 	}
 
-	dataRemoteObjectName := fmt.Sprintf("data/%d.json", jobId)
+	dataRemoteObjectName := fmt.Sprintf("data/%d.jsonl", jobId)
 
-	dataLocalTargetFile := fmt.Sprintf("data-%d.json", jobId)
+	dataLocalTargetFile := fmt.Sprintf("data-%d.jsonl", jobId)
 	dataLocalTargetPath := filepath.Join(r.tmpDir, dataLocalTargetFile)
 
 	err = r.client.FGetObject(context.Background(), r.cfg.JobsBucket, dataRemoteObjectName, dataLocalTargetPath, minio.GetObjectOptions{})
 	if err != nil {
-		return "", "", fmt.Errorf("failed to download job details for job %d: %w", jobId, err)
+		return "", "", fmt.Errorf("failed to download job DATA file for job %d: %w", jobId, err)
 	}
 
 	return detailsLocalTargetPath, dataLocalTargetPath, nil
