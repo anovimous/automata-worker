@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	log "log/slog"
 	"net/http"
 	"time"
 
@@ -54,7 +55,7 @@ func (p *Poller) Start(jobId int, ctx context.Context) <-chan PollInfo {
 	currentState := job.StateRunning
 
 	infoCh := make(chan PollInfo)
-
+	log.Info("poller.Start() called")
 	go func() {
 		defer close(infoCh)
 
