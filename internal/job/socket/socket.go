@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	log "log/slog"
 	"net"
 	"os"
 	"sync"
@@ -83,42 +84,27 @@ func AcceptConns(s1 *Socket, s2 *Socket, timeoutSecs int) (*Socket, *Socket, err
 }
 
 func (s *Socket) Listen(ctx context.Context) <-chan job.JobMessage {
-
 	msgCh := make(chan job.JobMessage)
-
 	go func() {
 		defer close(msgCh)
-
 		decoder := json.NewDecoder(s.Connection)
 
+		// Close connection when context is cancelled to unblock Decode()
+		go func() {
+			<-ctx.Done()
+			s.Connection.Close()
+		}()
+
 		for {
-			// check context before each decode attempt
-			select {
-			case <-ctx.Done():
-				return
-			default:
-			}
-
-			// set a short deadline so Decode does not block forever
-			s.Connection.SetReadDeadline(time.Now().Add(500 * time.Millisecond))
-
 			var msg job.JobMessage
 			if err := decoder.Decode(&msg); err != nil {
-				// if it is a timeout error, loop back and check context
-				if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
-					continue
-				}
-				// any other error means the connection is broken
-				return
+				log.Error("ORCH socket.Listen(): error on decoding message, going to call return")
+				return // connection closed or broken — exit cleanly
 			}
-
-			// clear the deadline after a successful read
-			s.Connection.SetReadDeadline(time.Time{})
-
+			log.Info("ORCH socket.Listen(): message recieved of", "type", msg.Typ)
 			msgCh <- msg
 		}
 	}()
-
 	return msgCh
 }
 
