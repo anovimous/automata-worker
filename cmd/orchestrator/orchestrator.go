@@ -11,7 +11,6 @@ import (
 	pollerP "github.com/anovimous/orchestrator/internal/central/poller"
 	configP "github.com/anovimous/orchestrator/internal/config"
 	"github.com/anovimous/orchestrator/internal/job"
-	jobP "github.com/anovimous/orchestrator/internal/job"
 	runnerP "github.com/anovimous/orchestrator/internal/job/runner"
 	"github.com/anovimous/orchestrator/internal/job/socket"
 	watcherP "github.com/anovimous/orchestrator/internal/job/watcher"
@@ -101,13 +100,20 @@ func main() {
 
 		if err := json.Unmarshal(msg.Body, &payload); err != nil {
 			log.Error("failed to unmarshal message payload", "error", err)
+			consumer.Ack(msg)
+			continue
 		}
 
 		jobId := payload.JobId
 
 		// Download from Rustfs
 		detailsLocation, dataLocation, err := rustfs.DownloadJobDetailsAndData(jobId)
-		fmt.Printf("Downloaded from rustfs\n")
+		if err != nil {
+			log.Error("failed to download from rustfs the required two files", "jobId", jobId, "error", err)
+			informer.Inform(jobId, job.StateFailed, "failed to download details and data files from rustfs")
+			continue
+		}
+		log.Info("Downloaded from rustfs")
 		// Ack message
 		if err := consumer.Ack(msg); err != nil {
 			log.Error("failed to ack message", "jobId", jobId, "error", err)
@@ -117,9 +123,12 @@ func main() {
 		initialPollResult, err := poller.SinglePoll(jobId)
 		if err != nil {
 			log.Error("failed to poll central service", "jobId", jobId, "error", err)
+			informer.Inform(jobId, job.StateFailed, "job has failed before start at initial poll due to failure to poll")
+			continue
 		}
-		if initialPollResult.DesiredState != jobP.StateQueued {
-			informer.Inform(jobId, job.StateCanceled, "Job has been canceled before start at initial poll")
+		if initialPollResult.DesiredState != job.StateQueued {
+			log.Error("job has failed before start at initial poll due to desired state not being RUNNING")
+			informer.Inform(jobId, job.StateFailed, "job has failed before start at initial poll due to desired state not being RUNNING")
 			continue
 		}
 
@@ -127,14 +136,21 @@ func main() {
 		command, err := mapper.Lookup(payload.RoutineKey)
 		if err != nil {
 			log.Error("failed to find mapping for routineKey", "routineKey", payload.RoutineKey, "jobId", jobId, "error", err)
+			informer.Inform(jobId, job.StateFailed, "failed to find mapping for routineKey")
+			continue
 		}
 
 		// Start Job process
 		process, err := runner.Start(jobId, command, detailsLocation, dataLocation, offReadSocket, offWriteSocket)
 		if err != nil {
 			log.Error("failed to start process", "jobId", jobId, "error", err)
+			informer.Inform(jobId, job.StateFailed, fmt.Sprintf("Job process failed to start at orchestrator runner.start: %s", err))
+			continue
 		}
-		log.Info("Started job successfully", "jobId", jobId)
+
+		log.Info("Started job successfully, informing central of RUNNING state", "jobId", jobId)
+		informer.Inform(jobId, job.StateRunning, "")
+
 		// Accept connections on sockets
 		activeReader, activeWriter, err1, err2 := socket.AcceptConns(offReadSocket, offWriteSocket, 30)
 		if err1 != nil || err2 != nil {
@@ -161,19 +177,26 @@ func main() {
 			select {
 			case pollResult := <-pollCh:
 				// forward state to worker via socket
+				log.Info("ORCH case pollResult called")
 				activeWriter.SendState(pollResult.DesiredState)
-
+				log.Info("ORCH case pollResult finished after sending state")
+				// COMPLETE HERE CHECKING WHY WHEN RUNNING, when s.sendMessage is sent in sdk.New it reaches the watcher, while the standard heartbeat loop is not reaching
 			case jobResult := <-completionCh:
 				// job finished or failed
+				log.Info("ORCH case jobResult called")
+				cancel()
 				rustfs.UploadResult(jobId, jobResult.ResultFilePath)
 				informer.Inform(jobId, jobResult.FinishState, jobResult.Message)
 				break loop
 			case state := <-stateChangeCh:
 				// state changed internally or as a result of sending a polled state
+				log.Info("ORCH case state called")
 				informer.Inform(jobId, state, "")
 
 			case <-timeoutCh:
 				// heartbeat timeout
+				log.Info("ORCH case TIMOUT called")
+				cancel()
 				process.Terminate()
 				informer.Inform(jobId, job.StateTerminated, "Timeout has been reached")
 				break loop
