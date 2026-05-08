@@ -5,8 +5,8 @@ import (
 	log "log/slog"
 	"os/exec"
 	"strings"
-	"syscall"
 
+	"github.com/anovimous/cgroup/pkg/cgroup"
 	"github.com/anovimous/orchestrator/internal/config"
 	"github.com/anovimous/orchestrator/internal/job/process"
 	"github.com/anovimous/orchestrator/internal/job/socket"
@@ -18,8 +18,9 @@ type Runner struct {
 }
 
 func New(cfg config.WorkerConfig, tmpDir string) *Runner {
-	return &Runner{heartbeatInterval: cfg.HeartbeatInterval,
-		tmpDir: tmpDir,
+	return &Runner{
+		heartbeatInterval: cfg.HeartbeatInterval,
+		tmpDir:            tmpDir,
 	}
 }
 
@@ -28,7 +29,7 @@ func (r *Runner) Start(jobId int, command string, detailsLocation string, dataLo
 		"--jobId", fmt.Sprintf("%d", jobId),
 		"--details", detailsLocation,
 		"--data", dataLocation,
-		"--readSocket", offWriteSocket.Path, // intentional switching, read for process but write for orch
+		"--readSocket", offWriteSocket.Path,
 		"--writeSocket", offReadSocket.Path,
 		"--heartbeatInterval", fmt.Sprintf("%d", r.heartbeatInterval),
 		"--tmpDir", r.tmpDir,
@@ -40,17 +41,33 @@ func (r *Runner) Start(jobId int, command string, detailsLocation string, dataLo
 	}
 
 	cmd := exec.Command(parts[0], append(parts[1:], args...)...)
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	log.Info("full command ran by orchestrator.Runner.Start():" + cmd.String())
+	log.Info("full command ran by orchestrator.Runner.Start(): " + cmd.String())
 
-	cmd.Dir = "/home/haidar/dev/automata-components/connector" // DEV ONLY
 	cmd.Stdin = nil
 	cmd.Stdout = nil // DEV ONLY
 	cmd.Stderr = nil // DEV ONLY
 
-	if err := cmd.Start(); err != nil {
-		return nil, fmt.Errorf("failed to start process for job %d: %w", jobId, err)
+	// Create job cgroup before starting the process
+	jobCg, err := cgroup.New(fmt.Sprintf("automata/job-%d", jobId))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create job cgroup for job %d: %w", jobId, err)
 	}
 
-	return process.New(cmd), nil
+	if err := cmd.Start(); err != nil {
+		jobCg.Destroy()
+		return nil, fmt.Errorf("failed to start process for job %d: %w", jobId, err)
+	}
+	// NOTE: This is commented since in the connector runner the connector moves itself in and out of the jobCg and toolCg
+	// // Add connector to job cgroup
+	// if err := jobCg.AddPid(cmd.Process.Pid); err != nil {
+	// 	cmd.Process.Kill()
+	// 	jobCg.Destroy()
+	// 	return nil, fmt.Errorf("failed to add connector to job cgroup for job %d: %w", jobId, err)
+	// }
+
+	go func() {
+		cmd.Wait()
+	}()
+
+	return process.New(cmd, jobCg), nil
 }

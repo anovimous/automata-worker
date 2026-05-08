@@ -29,7 +29,7 @@ func main() {
 	}
 
 	// Load mapping config internally into the mapper
-	mapper, err := mapperP.Load(cfg.MappingsFile)
+	mapper, err := mapperP.Load()
 	if err != nil {
 		log.Error("failed to load mappings", "error", err)
 		os.Exit(1)
@@ -127,8 +127,8 @@ func main() {
 			continue
 		}
 		if initialPollResult.DesiredState != job.StateQueued {
-			log.Error("job has failed before start at initial poll due to desired state not being RUNNING")
-			informer.Inform(jobId, job.StateFailed, "job has failed before start at initial poll due to desired state not being RUNNING")
+			log.Error("job has failed before start at initial poll due to desired state not being QUEUED")
+			informer.Inform(jobId, job.StateFailed, "job has failed before start at initial poll due to desired state not being QUEUED")
 			continue
 		}
 
@@ -207,6 +207,8 @@ func main() {
 
 		activeReader.Connection.Close()
 		activeWriter.Connection.Close()
+
+		process.Cgroup().Destroy()
 
 	}
 
