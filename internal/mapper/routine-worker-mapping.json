@@ -1,6 +1,6 @@
 [
     {
         "key": "fuzz",
-        "path": "/app/workers/ffuf.go"
+        "path": "ffuf-connector"
     }
 ]

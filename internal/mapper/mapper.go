@@ -1,10 +1,13 @@
 package config
 
 import (
+	_ "embed"
 	"encoding/json"
 	"fmt"
-	"os"
 )
+
+//go:embed routine-worker-mapping.json
+var mappingsData []byte
 
 type Mapper struct {
 	mappings map[string]string
@@ -15,18 +18,13 @@ type KeyPath struct {
 	Path string `json:"path"`
 }
 
-func Load(mappingFileLocation string) (*Mapper, error) {
+func Load() (*Mapper, error) {
 
 	mappings := map[string]string{}
 
-	data, err := os.ReadFile(mappingFileLocation)
-	if err != nil {
-		return nil, err
-	}
-
 	var allKeyPath []KeyPath
 
-	if err := json.Unmarshal(data, &allKeyPath); err != nil {
+	if err := json.Unmarshal(mappingsData, &allKeyPath); err != nil {
 		return nil, fmt.Errorf("failed to parse mappings file: %w", err)
 	}
 
