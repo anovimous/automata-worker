@@ -7,6 +7,8 @@ import (
 	"net"
 	"sync"
 	"time"
+
+	log "log/slog"
 )
 
 type SDK struct {
@@ -96,7 +98,11 @@ func (s *SDK) heartbeatLoop() {
 	defer ticker.Stop()
 
 	for range ticker.C {
-		s.sendMessage(heartbeatMessage{Type: "heartbeat"})
+		if err := s.sendMessage(heartbeatMessage{Type: "heartbeat"}); err != nil {
+			log.Error("SDK-heartbeatLoop: failed to send heartbeat", "error", err)
+		} else {
+			log.Info("SDK-heartbeatLoop: message sent successfully")
+		}
 	}
 }
 
@@ -111,14 +117,14 @@ func (s *SDK) listenerLoop() {
 		if err := decoder.Decode(&incoming); err != nil {
 			return
 		}
-
+		log.Info("SDK-Listenerloop: Message received successfully", "desiredState", incoming.State)
 		s.stateMu.Lock()
 		switch incoming.State {
-		case "cancelled":
+		case "CANCELED":
 			s.cancelled = true
-		case "paused":
+		case "PAUSED":
 			s.paused = true
-		case "resumed":
+		case "RUNNING":
 			s.paused = false
 		}
 		s.stateMu.Unlock()
@@ -157,10 +163,7 @@ func (s *SDK) UpdateState(newState string) {
 		NewState: newState,
 	})
 
-	if !s.standalone {
-		s.readConn.Close()
-		s.writeConn.Close()
-	}
+	log.Info("SDK: s.SendStateUpdate()")
 }
 
 func (s *SDK) Finish(resultPath string) {
@@ -176,6 +179,7 @@ func (s *SDK) Finish(resultPath string) {
 		s.readConn.Close()
 		s.writeConn.Close()
 	}
+	log.Info("SDK: s.Finish()")
 }
 
 func (s *SDK) Fail(message string) {
@@ -191,6 +195,7 @@ func (s *SDK) Fail(message string) {
 		s.readConn.Close()
 		s.writeConn.Close()
 	}
+	log.Info("SDK: s.Fail()")
 }
 
 func (s *SDK) sendMessage(msg any) error {
