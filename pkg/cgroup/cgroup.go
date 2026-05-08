@@ -22,6 +22,15 @@ func New(name string) (*Cgroup, error) {
 	if err := os.MkdirAll(path, 0755); err != nil {
 		return nil, fmt.Errorf("failed to create cgroup %s: %w", name, err)
 	}
+
+	// Allow child processes to create sub-cgroups and add themselves
+	if err := os.Chmod(path, 0777); err != nil {
+		return nil, fmt.Errorf("failed to chmod cgroup dir: %w", err)
+	}
+	if err := os.Chmod(filepath.Join(path, "cgroup.procs"), 0666); err != nil {
+		return nil, fmt.Errorf("failed to chmod cgroup.procs: %w", err)
+	}
+
 	return &Cgroup{Path: path}, nil
 }
 
@@ -112,7 +121,17 @@ func (c *Cgroup) Terminate(timeout time.Duration) error {
 
 // Kill sends SIGKILL to all processes in this cgroup and all sub-cgroups
 func (c *Cgroup) Kill() error {
-	return c.Signal(syscall.SIGKILL)
+	// Try cgroup.kill first (kernel 5.14+, atomic freeze+kill)
+	err := os.WriteFile(filepath.Join(c.Path, "cgroup.kill"), []byte("1"), 0644)
+	if err == nil {
+		return nil
+	}
+
+	// Fallback for older kernels — freeze then kill
+	os.WriteFile(filepath.Join(c.Path, "cgroup.freeze"), []byte("1"), 0644)
+	c.Signal(syscall.SIGKILL)
+	os.WriteFile(filepath.Join(c.Path, "cgroup.freeze"), []byte("0"), 0644)
+	return nil
 }
 
 // Destroy removes the cgroup and all sub-cgroups.
