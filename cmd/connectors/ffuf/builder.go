@@ -15,7 +15,7 @@ import (
 	"github.com/google/uuid"
 )
 
-var allowedFlags = []string{"-H", "-X", "-b", "-cc", "-ck", "-d", "-http2", "-ignore-body", "-r", "-raw", "-recursion", "-recursion-depth", "-recursion-strategy", "-replay-proxy", "-sni", "-timeout", "-u", "-x", "-V", "-ac", "-acc", "-ach", "-ack", "-acs", "-c", "-config", "-json", "-maxtime", "-maxtime-job", "-noninteractive", "-p", "-rate", "-s", "-sa", "-scraperfile", "-scrapers", "-se", "-search", "-sf", "-t", "-v", "-mc", "-ml", "-mmode", "-mr", "-ms", "-mt", "-mw", "-fc", "-fl", "-fmode", "-fr", "-fs", "-ft", "-fw", "-D", "-e", "-enc", "-ic", "-input-cmd", "-input-num", "-input-shell", "-mode", "-request", "-request-proto", "-w", "-debug-log", "-o", "-od", "-of", "-or"}
+var allowedFlags = []string{"-cc", "-ck", "-d", "-http2", "-ignore-body", "-r", "-raw", "-recursion", "-recursion-depth", "-recursion-strategy", "-replay-proxy", "-sni", "-timeout", "-u", "-x", "-V", "-ac", "-acc", "-ach", "-ack", "-acs", "-c", "-json", "-maxtime", "-maxtime-job", "-p", "-s", "-sa", "-scrapers", "-se", "-search", "-sf", "-t", "-v", "-mc", "-ml", "-mmode", "-mr", "-ms", "-mt", "-mw", "-fc", "-fl", "-fmode", "-fr", "-fs", "-ft", "-fw", "-D", "-e", "-enc", "-ic", "-input-cmd", "-input-num", "-input-shell", "-mode", "-request-proto"}
 
 type ffufCustomConfig struct {
 	RawRequestBase64 string        `json:"rawRequestBase64"`
@@ -39,7 +39,7 @@ func BuildCommand(j *parser.JobDetails, tmpDir string) (command string, args []s
 
 	parts = append(parts, "-o", outputFilePath)
 
-	parts = append(parts, "-w", j.WordListPath)
+	parts = append(parts, "-w", j.WordListsPaths[0])
 
 	parts = append(parts, "-rate", strconv.Itoa(j.Rate))
 

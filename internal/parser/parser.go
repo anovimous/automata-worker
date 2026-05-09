@@ -10,15 +10,15 @@ import (
 // Main struct
 
 type JobDetails struct {
-	JobId         int             `json:"jobId"`
-	RoutineKey    string          `json:"routineKey"`
-	Rate          int             `json:"rate"`
-	Verbosity     string          `json:"verbosity"`
-	Auth          AuthDataWrapper `json:"auth"`
-	TargetType    string          `json:"targetType"`
-	GenericConfig GenericConfig   `json:"genericConfig"`
-	CustomConfig  json.RawMessage `json:"customConfig"`
-	WordListPath  string          `json:"wordlistPath"`
+	JobId          int             `json:"jobId"`
+	RoutineKey     string          `json:"routineKey"`
+	Rate           int             `json:"rate"`
+	Verbosity      string          `json:"verbosity"`
+	Auth           AuthDataWrapper `json:"auth"`
+	TargetType     string          `json:"targetType"`
+	GenericConfig  GenericConfig   `json:"genericConfig"`
+	CustomConfig   json.RawMessage `json:"customConfig"`
+	WordListsPaths []string        `json:"wordlistsPaths"`
 }
 
 // Authentication Details
