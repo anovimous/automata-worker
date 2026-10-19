@@ -111,6 +111,7 @@ func main() {
 		if err != nil {
 			log.Error("failed to download from rustfs the required two files", "jobId", jobId, "error", err)
 			informer.Inform(jobId, job.StateFailed, "failed to download details and data files from rustfs")
+			consumer.Ack(msg)
 			continue
 		}
 		log.Info("Downloaded from rustfs")
