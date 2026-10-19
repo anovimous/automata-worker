@@ -6,10 +6,10 @@ import (
 	"os"
 	"strings"
 
-	"github.com/anovimous/sdkconnector/internal/parser"
-	"github.com/anovimous/sdkconnector/internal/runner"
+	"github.com/anovimous/automata-worker/connector/internal/parser"
+	"github.com/anovimous/automata-worker/connector/internal/runner"
 
-	"github.com/anovimous/automatasdk/sdk"
+	"github.com/anovimous/automata-worker/sdk/go/sdk"
 )
 
 func main() {

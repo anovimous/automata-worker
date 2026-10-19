@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/anovimous/orchestrator/internal/job"
+	"github.com/anovimous/automata-worker/orchestrator/internal/job"
 )
 
 type Socket struct {

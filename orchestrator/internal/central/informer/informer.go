@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/anovimous/orchestrator/internal/job"
+	"github.com/anovimous/automata-worker/orchestrator/internal/job"
 )
 
 // main functionality is to inform the central service when the job fails or finishes or any other detail

@@ -1,16 +1,16 @@
-module github.com/anovimous/orchestrator
+module github.com/anovimous/automata-worker/orchestrator
 
 go 1.26.2
 
 require github.com/joho/godotenv v1.5.1
 
 require (
-	github.com/anovimous/cgroup v0.0.0
+	github.com/anovimous/automata-worker/cgroup v0.0.0
 	github.com/minio/minio-go/v7 v7.1.0
 	github.com/rabbitmq/amqp091-go v1.11.0
 )
 
-replace github.com/anovimous/cgroup => /home/haidar/dev/automata-components/cgroup
+replace github.com/anovimous/automata-worker/cgroup => ../cgroup
 
 require (
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect

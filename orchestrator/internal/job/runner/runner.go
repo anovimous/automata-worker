@@ -6,10 +6,10 @@ import (
 	"os/exec"
 	"strings"
 
-	"github.com/anovimous/cgroup/pkg/cgroup"
-	"github.com/anovimous/orchestrator/internal/config"
-	"github.com/anovimous/orchestrator/internal/job/process"
-	"github.com/anovimous/orchestrator/internal/job/socket"
+	"github.com/anovimous/automata-worker/cgroup/pkg/cgroup"
+	"github.com/anovimous/automata-worker/orchestrator/internal/config"
+	"github.com/anovimous/automata-worker/orchestrator/internal/job/process"
+	"github.com/anovimous/automata-worker/orchestrator/internal/job/socket"
 )
 
 type Runner struct {

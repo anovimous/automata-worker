@@ -4,7 +4,7 @@ import (
 	log "log/slog"
 	"time"
 
-	"github.com/anovimous/orchestrator/internal/job"
+	"github.com/anovimous/automata-worker/orchestrator/internal/job"
 )
 
 // main functionality is to to track the progress of the job including checking for heartbeats

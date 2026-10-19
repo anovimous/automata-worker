@@ -9,8 +9,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/anovimous/automatasdk/sdk"
-	"github.com/anovimous/cgroup/pkg/cgroup"
+	"github.com/anovimous/automata-worker/cgroup/pkg/cgroup"
+	"github.com/anovimous/automata-worker/sdk/go/sdk"
 )
 
 func Run(s *sdk.SDK, command string, args []string, outputPath string) error {

@@ -7,7 +7,7 @@ import (
 	"slices"
 	"strconv"
 
-	"github.com/anovimous/sdkconnector/internal/parser"
+	"github.com/anovimous/automata-worker/connector/internal/parser"
 	"github.com/google/uuid"
 )
 

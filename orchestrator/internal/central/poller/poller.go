@@ -8,7 +8,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/anovimous/orchestrator/internal/job"
+	"github.com/anovimous/automata-worker/orchestrator/internal/job"
 )
 
 // polls the central service for the status of the job

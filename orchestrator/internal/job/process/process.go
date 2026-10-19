@@ -5,7 +5,7 @@ import (
 	"os/exec"
 	"time"
 
-	"github.com/anovimous/cgroup/pkg/cgroup"
+	"github.com/anovimous/automata-worker/cgroup/pkg/cgroup"
 )
 
 type Process struct {

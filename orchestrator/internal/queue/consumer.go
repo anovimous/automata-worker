@@ -3,7 +3,7 @@ package queue
 import (
 	"fmt"
 
-	"github.com/anovimous/orchestrator/internal/config"
+	"github.com/anovimous/automata-worker/orchestrator/internal/config"
 	amqp "github.com/rabbitmq/amqp091-go"
 )
 

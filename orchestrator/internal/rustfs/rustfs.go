@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"path/filepath"
 
-	"github.com/anovimous/orchestrator/internal/config"
+	"github.com/anovimous/automata-worker/orchestrator/internal/config"
 	minio "github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
 )

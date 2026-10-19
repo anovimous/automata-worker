@@ -7,16 +7,16 @@ import (
 	log "log/slog"
 	"os"
 
-	informerP "github.com/anovimous/orchestrator/internal/central/informer"
-	pollerP "github.com/anovimous/orchestrator/internal/central/poller"
-	configP "github.com/anovimous/orchestrator/internal/config"
-	"github.com/anovimous/orchestrator/internal/job"
-	runnerP "github.com/anovimous/orchestrator/internal/job/runner"
-	"github.com/anovimous/orchestrator/internal/job/socket"
-	watcherP "github.com/anovimous/orchestrator/internal/job/watcher"
-	mapperP "github.com/anovimous/orchestrator/internal/mapper"
-	queueP "github.com/anovimous/orchestrator/internal/queue"
-	rustfsP "github.com/anovimous/orchestrator/internal/rustfs"
+	informerP "github.com/anovimous/automata-worker/orchestrator/internal/central/informer"
+	pollerP "github.com/anovimous/automata-worker/orchestrator/internal/central/poller"
+	configP "github.com/anovimous/automata-worker/orchestrator/internal/config"
+	"github.com/anovimous/automata-worker/orchestrator/internal/job"
+	runnerP "github.com/anovimous/automata-worker/orchestrator/internal/job/runner"
+	"github.com/anovimous/automata-worker/orchestrator/internal/job/socket"
+	watcherP "github.com/anovimous/automata-worker/orchestrator/internal/job/watcher"
+	mapperP "github.com/anovimous/automata-worker/orchestrator/internal/mapper"
+	queueP "github.com/anovimous/automata-worker/orchestrator/internal/queue"
+	rustfsP "github.com/anovimous/automata-worker/orchestrator/internal/rustfs"
 )
 
 func main() {
