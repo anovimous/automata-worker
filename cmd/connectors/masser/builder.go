@@ -28,7 +28,7 @@ func BuildCommand(j *parser.JobDetails, dataFilePath string, tmpDir string) (com
 
 	parts := []string{}
 
-	outputFileName := fmt.Sprintf("%s.json", uuid.New().String())
+	outputFileName := fmt.Sprintf("%s.result", uuid.New().String())
 
 	outputFilePath = filepath.Join(tmpDir, outputFileName)
 
