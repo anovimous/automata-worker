@@ -3,7 +3,8 @@ FROM golang:1.26 AS builder
 
 WORKDIR /build
 
-# Copy all modules
+# Copy the workspace file and all modules
+COPY go.work ./
 COPY sdk/ ./sdk/
 COPY cgroup/ ./cgroup/
 COPY orchestrator/ ./orchestrator/
@@ -13,19 +14,16 @@ COPY --from=masser ./ ./tools/masser
 
 # Build orchestrator
 WORKDIR /build/orchestrator
-RUN go mod edit -replace github.com/anovimous/cgroup=../cgroup
 RUN go build -o /bin/orchestrator ./cmd/orchestrator
 
 # Build connectors
 WORKDIR /build/connector
-RUN go mod edit -replace github.com/anovimous/automatasdk=../sdk/go
-RUN go mod edit -replace github.com/anovimous/cgroup=../cgroup
 RUN go build -o /bin/ffuf-connector ./cmd/connectors/ffuf
 RUN go build -o /bin/masser-connector ./cmd/connectors/masser
 
-# Build custom tools
+# Build custom tools (not part of the workspace)
 WORKDIR /build/tools/masser
-RUN go build -o /bin/masser .
+RUN GOWORK=off go build -o /bin/masser .
 
 # STAGE 2: RUNNER
 FROM ubuntu:24.04
