@@ -89,5 +89,21 @@ func Parse(localPath string) (*JobDetails, error) {
 		return nil, fmt.Errorf("failed to parse job details file: %w", err)
 	}
 
+	if details.WordListsPaths == nil {
+		details.WordListsPaths = []string{}
+	}
+	if details.GenericConfig.MatchAndReplace == nil {
+		details.GenericConfig.MatchAndReplace = []MatchAndReplace{}
+	}
+	if details.Auth.Data.Headers == nil {
+		details.Auth.Data.Headers = []AuthNameValuePair{}
+	}
+	if details.Auth.Data.Cookies == nil {
+		details.Auth.Data.Cookies = []AuthNameValuePair{}
+	}
+	if details.Auth.Data.QueryParameters == nil {
+		details.Auth.Data.QueryParameters = []AuthNameValuePair{}
+	}
+
 	return &details, nil
 }
