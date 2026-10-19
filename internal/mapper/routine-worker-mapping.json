@@ -2,5 +2,8 @@
     {
         "key": "fuzz",
         "path": "ffuf-connector"
+    },{
+        "key": "masser",
+        "path": "masser-connector"
     }
 ]
