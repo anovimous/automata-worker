@@ -1,0 +1,14 @@
+services:
+  orchestrator:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      additional_contexts:
+        masser: /home/haidar/cbr/tools/go/masser
+    privileged: true
+    network_mode: host
+    env_file:
+      - ./orchestrator/.env
+    volumes:
+      - /home/haidar/cbr:/home/haidar/cbr
+      - /var/tmp:/var/tmp
