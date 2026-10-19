@@ -10,7 +10,6 @@ require (
 	github.com/rabbitmq/amqp091-go v1.11.0
 )
 
-replace github.com/anovimous/automata-worker/cgroup => ../cgroup
 
 require (
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect

@@ -1,0 +1,12 @@
+go 1.26.2
+
+use (
+	./cgroup
+	./connector
+	./orchestrator
+	./sdk/go
+)
+
+replace github.com/anovimous/automata-worker/sdk/go v0.0.0 => ./sdk/go
+
+replace github.com/anovimous/automata-worker/cgroup v0.0.0 => ./cgroup
