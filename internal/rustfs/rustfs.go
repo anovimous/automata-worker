@@ -57,7 +57,7 @@ func (r *Rustfs) DownloadJobDetailsAndData(jobId int) (detailsLocalLoc string, d
 
 func (r *Rustfs) UploadResult(jobId int, localResultsLoc string) error {
 
-	objectName := fmt.Sprintf("%d.json", jobId)
+	objectName := fmt.Sprintf("%d.result", jobId)
 
 	_, err := r.client.FPutObject(context.Background(), r.cfg.ResultsBucket, objectName, localResultsLoc, minio.PutObjectOptions{})
 	if err != nil {
