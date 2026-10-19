@@ -32,6 +32,12 @@ func main() {
 	tmpDir := s.TmpDirectory()
 
 	command, args, outputFilePath, err := BuildCommand(jobDetails, s.DataPath(), tmpDir)
+	if err != nil {
+		log.Error("failed to build command from job details", "error", err)
+		s.Fail(fmt.Sprintf("failed to build command from job details: %v", err))
+		os.Exit(1)
+	}
+
 	log.Info("GOING TO EXECUTE CONNECTOR RUNNER.RUN WITH THE COMMAND", "command", command, "args", strings.Join(args, " "), "outputFilePath", outputFilePath)
 	if err := runner.Run(s, command, args, outputFilePath); err != nil {
 		log.Error("manager run failed", "jobId", s.JobId(), "error", err)
