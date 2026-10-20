@@ -165,7 +165,7 @@ func main() {
 		activeReader, activeWriter, err1, err2 := socket.AcceptConns(offReadSocket, offWriteSocket, 30)
 		if err1 != nil || err2 != nil {
 			process.Terminate()
-			inform(informer, jobId, job.StateTerminated, "Process didn't connect to the sockets in the required time")
+			inform(informer, jobId, job.StateSelfTerminated, "Process didn't connect to the sockets in the required time")
 			log.Info("Job process terminated due to not connecting to sockets before timeout", "jobId", jobId)
 			continue
 		}
@@ -214,7 +214,7 @@ func main() {
 				log.Info("ORCH case TIMOUT called")
 				cancel()
 				process.Terminate()
-				inform(informer, jobId, job.StateTerminated, "Timeout has been reached")
+				inform(informer, jobId, job.StateSelfTerminated, "Timeout has been reached")
 				break loop
 			}
 		}
