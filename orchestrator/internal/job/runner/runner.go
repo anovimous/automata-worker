@@ -44,7 +44,9 @@ func (r *Runner) Start(jobId int, tmpDir string, command string, detailsLocation
 	}
 
 	if err := cmd.Start(); err != nil {
-		jobCg.Destroy()
+		if destroyErr := jobCg.Destroy(); destroyErr != nil {
+			log.Error("failed to remove job cgroup", "jobId", jobId, "error", destroyErr)
+		}
 		return nil, fmt.Errorf("failed to start process for job %d: %w", jobId, err)
 	}
 	// NOTE: This is commented since in the connector runner the connector moves itself in and out of the jobCg and toolCg

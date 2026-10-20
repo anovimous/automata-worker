@@ -185,7 +185,11 @@ func main() {
 				return
 			}
 			// the job cgroup exists from here on, so it goes away on every exit path
-			defer process.Cgroup().Destroy()
+			defer func() {
+				if err := process.Cgroup().Destroy(); err != nil {
+					log.Error("failed to remove job cgroup", "jobId", jobId, "error", err)
+				}
+			}()
 
 			log.Info("Started job successfully, informing central of RUNNING state", "jobId", jobId)
 			inform(informer, jobId, job.StateRunning, "")

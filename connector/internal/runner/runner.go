@@ -26,7 +26,9 @@ func Run(s *sdk.SDK, command string, args []string, outputPath string) error {
 	}
 	defer func() {
 		toolCg.Kill()
-		toolCg.Destroy()
+		if err := toolCg.Destroy(); err != nil {
+			log.Error("failed to remove tool cgroup", "error", err)
+		}
 	}()
 
 	cmd := exec.Command(command, args...)
