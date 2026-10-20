@@ -38,3 +38,25 @@ func TestDecideInitialPoll(t *testing.T) {
 		})
 	}
 }
+
+func TestStopsTheJob(t *testing.T) {
+	tests := []struct {
+		desired job.JobState
+		want    bool
+	}{
+		{job.StateLostContact, true},
+		{job.StateRunning, false},
+		{job.StatePaused, false},
+		{job.StateCanceled, false},
+		{job.StateSelfTerminated, false},
+		{job.StateFinished, false},
+	}
+
+	for _, tt := range tests {
+		t.Run(string(tt.desired), func(t *testing.T) {
+			if got := stopsTheJob(tt.desired); got != tt.want {
+				t.Errorf("stopsTheJob(%s) = %v, want %v", tt.desired, got, tt.want)
+			}
+		})
+	}
+}

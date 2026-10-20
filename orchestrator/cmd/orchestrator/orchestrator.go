@@ -186,6 +186,14 @@ func main() {
 		for {
 			select {
 			case pollResult := <-pollCh:
+				if stopsTheJob(pollResult.DesiredState) {
+					// the core gave the job up because it heard nothing from this worker, so
+					// there is nothing to report and the tool must not go on running
+					log.Warn("the central service considers the job lost, stopping it", "jobId", jobId)
+					cancel()
+					process.Terminate()
+					break loop
+				}
 				// forward state to worker via socket
 				log.Info("ORCH case pollResult called")
 				if err := activeWriter.SendState(pollResult.DesiredState); err != nil {
@@ -245,4 +253,12 @@ func decideInitialPoll(desired job.JobState) (start bool, report job.JobState, m
 	default:
 		return false, "", ""
 	}
+}
+
+// stopsTheJob tells whether the state the core answers with while the job runs
+// means that the job has to be stopped without any report. LOSTCONTACT is the
+// core taking the job away from a worker which it thought gone, so it is a
+// final state the core does not accept reports for anymore.
+func stopsTheJob(desired job.JobState) bool {
+	return desired == job.StateLostContact
 }

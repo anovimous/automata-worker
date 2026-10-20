@@ -16,6 +16,8 @@ const (
 	StateFinished       JobState = "FINISHED"
 	StateFailed         JobState = "FAILED"
 	StateSelfTerminated JobState = "SELFTERMINATED"
+	// only the core sets it, for a job which no worker has been in contact about
+	StateLostContact JobState = "LOSTCONTACT"
 )
 
 type JobMessage struct {
