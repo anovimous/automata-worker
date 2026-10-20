@@ -6,6 +6,7 @@ import (
 	"fmt"
 	log "log/slog"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/anovimous/automata-worker/orchestrator/internal/job"
@@ -13,10 +14,13 @@ import (
 
 // polls the central service for the status of the job
 
+const requestTimeout = 10 * time.Second
+
 type Poller struct {
 	baseURL  string
 	endpoint string
-	interval int
+	interval time.Duration
+	client   *http.Client
 }
 
 type PollInfo struct {
@@ -26,13 +30,14 @@ type PollInfo struct {
 func New(baseURL, stateEndpoint string, pollInterval int) *Poller {
 	return &Poller{baseURL: baseURL,
 		endpoint: stateEndpoint,
-		interval: pollInterval}
+		interval: time.Duration(pollInterval) * time.Second,
+		client:   &http.Client{Timeout: requestTimeout}}
 }
 
 func (p *Poller) SinglePoll(jobId int) (PollInfo, error) {
 	url := fmt.Sprintf("%s%s/%d", p.baseURL, p.endpoint, jobId)
 
-	resp, err := http.Get(url)
+	resp, err := p.client.Get(url)
 	if err != nil {
 		return PollInfo{}, fmt.Errorf("failed to poll central service for job %d: %w", jobId, err)
 	}
@@ -50,8 +55,13 @@ func (p *Poller) SinglePoll(jobId int) (PollInfo, error) {
 	return info, nil
 }
 
-func (p *Poller) Start(jobId int, ctx context.Context) <-chan PollInfo {
+// Start polls the central service until ctx is done and sends the desired state
+// of the job each time it differs from the last one it sent. The returned
+// function makes the poller forget what it sent, so the desired state is sent
+// again on the next poll. It is for when a sent state could not be delivered.
+func (p *Poller) Start(jobId int, ctx context.Context) (<-chan PollInfo, func()) {
 
+	var mu sync.Mutex
 	currentState := job.StateRunning
 
 	infoCh := make(chan PollInfo)
@@ -59,7 +69,7 @@ func (p *Poller) Start(jobId int, ctx context.Context) <-chan PollInfo {
 	go func() {
 		defer close(infoCh)
 
-		ticker := time.NewTicker(time.Duration(p.interval) * time.Second)
+		ticker := time.NewTicker(p.interval)
 		defer ticker.Stop()
 
 		for {
@@ -72,13 +82,25 @@ func (p *Poller) Start(jobId int, ctx context.Context) <-chan PollInfo {
 					continue
 				}
 
-				if info.DesiredState != currentState {
+				mu.Lock()
+				changed := info.DesiredState != currentState
+				if changed {
 					currentState = info.DesiredState
+				}
+				mu.Unlock()
+
+				if changed {
 					infoCh <- info
 				}
 			}
 		}
 	}()
 
-	return infoCh
+	forget := func() {
+		mu.Lock()
+		defer mu.Unlock()
+		currentState = ""
+	}
+
+	return infoCh, forget
 }
