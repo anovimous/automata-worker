@@ -175,7 +175,7 @@ func main() {
 		completionCh, stateChangeCh, timeoutCh := watcher.Watch(fmtMessageCh)
 
 		// Start polling central-service for new state update
-		pollCh := poller.Start(jobId, ctx)
+		pollCh, resendPolledState := poller.Start(jobId, ctx)
 
 	loop:
 		for {
@@ -183,7 +183,11 @@ func main() {
 			case pollResult := <-pollCh:
 				// forward state to worker via socket
 				log.Info("ORCH case pollResult called")
-				activeWriter.SendState(pollResult.DesiredState)
+				if err := activeWriter.SendState(pollResult.DesiredState); err != nil {
+					// the worker did not get it, so it is sent again on the next poll
+					log.Error("failed to send the desired state to the worker", "jobId", jobId, "desiredState", pollResult.DesiredState, "error", err)
+					resendPolledState()
+				}
 				log.Info("ORCH case pollResult finished after sending state")
 				// COMPLETE HERE CHECKING WHY WHEN RUNNING, when s.sendMessage is sent in sdk.New it reaches the watcher, while the standard heartbeat loop is not reaching
 			case jobResult := <-completionCh:
