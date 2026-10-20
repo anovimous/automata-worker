@@ -6,6 +6,7 @@ import (
 	"fmt"
 	log "log/slog"
 	"os"
+	"time"
 
 	informerP "github.com/anovimous/automata-worker/orchestrator/internal/central/informer"
 	pollerP "github.com/anovimous/automata-worker/orchestrator/internal/central/poller"
@@ -16,8 +17,12 @@ import (
 	watcherP "github.com/anovimous/automata-worker/orchestrator/internal/job/watcher"
 	mapperP "github.com/anovimous/automata-worker/orchestrator/internal/mapper"
 	queueP "github.com/anovimous/automata-worker/orchestrator/internal/queue"
+	"github.com/anovimous/automata-worker/orchestrator/internal/retry"
 	rustfsP "github.com/anovimous/automata-worker/orchestrator/internal/rustfs"
 )
+
+// uploading the result is retried like the reports to the central service
+var uploadPolicy = retry.Policy{Attempts: 5, BaseDelay: time.Second, MaxDelay: 30 * time.Second}
 
 func main() {
 
@@ -110,7 +115,7 @@ func main() {
 		detailsLocation, dataLocation, err := rustfs.DownloadJobDetailsAndData(jobId)
 		if err != nil {
 			log.Error("failed to download from rustfs the required two files", "jobId", jobId, "error", err)
-			informer.Inform(jobId, job.StateFailed, "failed to download details and data files from rustfs")
+			inform(informer, jobId, job.StateFailed, "failed to download details and data files from rustfs")
 			consumer.Ack(msg)
 			continue
 		}
@@ -124,7 +129,7 @@ func main() {
 		initialPollResult, err := poller.SinglePoll(jobId)
 		if err != nil {
 			log.Error("failed to poll central service", "jobId", jobId, "error", err)
-			informer.Inform(jobId, job.StateFailed, "job has failed before start at initial poll due to failure to poll")
+			inform(informer, jobId, job.StateFailed, "job has failed before start at initial poll due to failure to poll")
 			continue
 		}
 		start, report, message := decideInitialPoll(initialPollResult.DesiredState)
@@ -132,7 +137,7 @@ func main() {
 			if report == "" {
 				log.Info("skipping the message, the job is not waiting to be started", "jobId", jobId, "desiredState", initialPollResult.DesiredState)
 			} else {
-				informer.Inform(jobId, report, message)
+				inform(informer, jobId, report, message)
 			}
 			continue
 		}
@@ -141,7 +146,7 @@ func main() {
 		command, err := mapper.Lookup(payload.RoutineKey)
 		if err != nil {
 			log.Error("failed to find mapping for routineKey", "routineKey", payload.RoutineKey, "jobId", jobId, "error", err)
-			informer.Inform(jobId, job.StateFailed, "failed to find mapping for routineKey")
+			inform(informer, jobId, job.StateFailed, "failed to find mapping for routineKey")
 			continue
 		}
 
@@ -149,18 +154,18 @@ func main() {
 		process, err := runner.Start(jobId, command, detailsLocation, dataLocation, offReadSocket, offWriteSocket)
 		if err != nil {
 			log.Error("failed to start process", "jobId", jobId, "error", err)
-			informer.Inform(jobId, job.StateFailed, fmt.Sprintf("Job process failed to start at orchestrator runner.start: %s", err))
+			inform(informer, jobId, job.StateFailed, fmt.Sprintf("Job process failed to start at orchestrator runner.start: %s", err))
 			continue
 		}
 
 		log.Info("Started job successfully, informing central of RUNNING state", "jobId", jobId)
-		informer.Inform(jobId, job.StateRunning, "")
+		inform(informer, jobId, job.StateRunning, "")
 
 		// Accept connections on sockets
 		activeReader, activeWriter, err1, err2 := socket.AcceptConns(offReadSocket, offWriteSocket, 30)
 		if err1 != nil || err2 != nil {
 			process.Terminate()
-			informer.Inform(jobId, job.StateTerminated, "Process didn't connect to the sockets in the required time")
+			inform(informer, jobId, job.StateTerminated, "Process didn't connect to the sockets in the required time")
 			log.Info("Job process terminated due to not connecting to sockets before timeout", "jobId", jobId)
 			continue
 		}
@@ -194,20 +199,22 @@ func main() {
 				// job finished or failed
 				log.Info("ORCH case jobResult called")
 				cancel()
-				rustfs.UploadResult(jobId, jobResult.ResultFilePath)
-				informer.Inform(jobId, jobResult.FinishState, jobResult.Message)
+				finishState, finishMessage := completionReport(jobId, jobResult, func(jobId int, resultPath string) error {
+					return uploadPolicy.Do(func() error { return rustfs.UploadResult(jobId, resultPath) })
+				})
+				inform(informer, jobId, finishState, finishMessage)
 				break loop
 			case state := <-stateChangeCh:
 				// state changed internally or as a result of sending a polled state
 				log.Info("ORCH case state called")
-				informer.Inform(jobId, state, "")
+				inform(informer, jobId, state, "")
 
 			case <-timeoutCh:
 				// heartbeat timeout
 				log.Info("ORCH case TIMOUT called")
 				cancel()
 				process.Terminate()
-				informer.Inform(jobId, job.StateTerminated, "Timeout has been reached")
+				inform(informer, jobId, job.StateTerminated, "Timeout has been reached")
 				break loop
 			}
 		}
