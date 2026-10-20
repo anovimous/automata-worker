@@ -158,7 +158,7 @@ func (s *SDK) WaitForResume() {
 }
 
 func (s *SDK) UpdateState(newState string) {
-	s.sendMessage(stateUpdateMessage{
+	s.sendLogged("stateUpdate", stateUpdateMessage{
 		Type:     "stateUpdate",
 		NewState: newState,
 	})
@@ -167,7 +167,7 @@ func (s *SDK) UpdateState(newState string) {
 }
 
 func (s *SDK) Finish(resultPath string) {
-	s.sendMessage(finishMessage{
+	s.sendLogged("finish", finishMessage{
 		Type: "finish",
 		Result: jobResult{
 			ResultFilePath: resultPath,
@@ -194,7 +194,7 @@ func (s *SDK) Cancel(message string) {
 }
 
 func (s *SDK) finishWithoutResult(finishState string, message string) {
-	s.sendMessage(finishMessage{
+	s.sendLogged("finish", finishMessage{
 		Type: "finish",
 		Result: jobResult{
 			Message:     message,
@@ -205,6 +205,14 @@ func (s *SDK) finishWithoutResult(finishState string, message string) {
 	if !s.standalone {
 		s.readConn.Close()
 		s.writeConn.Close()
+	}
+}
+
+// sendLogged sends a message whose failure the caller can not act on (the job is
+// ending), so the error is logged instead of lost.
+func (s *SDK) sendLogged(kind string, msg any) {
+	if err := s.sendMessage(msg); err != nil {
+		log.Error("SDK: failed to report to the orchestrator", "type", kind, "error", err)
 	}
 }
 

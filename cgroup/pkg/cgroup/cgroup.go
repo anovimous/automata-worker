@@ -1,6 +1,7 @@
 package cgroup
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -147,9 +148,12 @@ func (c *Cgroup) Destroy() error {
 	})
 
 	// Remove deepest first so parent directories are empty before removal
+	var errs []error
 	for i := len(dirs) - 1; i >= 0; i-- {
-		os.Remove(dirs[i])
+		if err := os.Remove(dirs[i]); err != nil {
+			errs = append(errs, err)
+		}
 	}
 
-	return nil
+	return errors.Join(errs...)
 }

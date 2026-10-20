@@ -7,7 +7,7 @@ import (
 	"github.com/joho/godotenv"
 )
 
-func Load() (config *Config, error error) {
+func Load() (*Config, error) {
 
 	godotenv.Load()
 
