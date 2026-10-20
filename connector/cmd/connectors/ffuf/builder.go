@@ -31,6 +31,11 @@ func BuildCommand(j *parser.JobDetails, tmpDir string) (command string, args []s
 		return "", nil, "", fmt.Errorf("JobDetails.CustomConfig is not of allowed form for this routine: %w", err)
 	}
 
+	// ffuf takes one wordlist; the core sends a set, so the first one is used
+	if len(j.WordListsPaths) == 0 {
+		return "", nil, "", fmt.Errorf("The job has no wordlist, ffuf needs one")
+	}
+
 	parts := []string{}
 
 	outputFileName := fmt.Sprintf("%s.result", uuid.New().String())
