@@ -7,6 +7,17 @@ import (
 	amqp "github.com/rabbitmq/amqp091-go"
 )
 
+// The core declares the same queue (HttpJobRabbitMQConfig: durable, with
+// x-max-priority 2) and the broker refuses a declaration that differs, which
+// stops the orchestrator at startup. These must be kept equal to the core's.
+const queueDurable = true
+
+func queueArguments() amqp.Table {
+	return amqp.Table{
+		"x-max-priority": int32(2),
+	}
+}
+
 type Consumer struct {
 	connection *amqp.Connection
 	channel    *amqp.Channel
@@ -38,13 +49,11 @@ func New(cfg config.RabbitMQConfig) (*Consumer, error) {
 
 	_, err = channel.QueueDeclare(
 		cfg.Queue,
-		true,
+		queueDurable,
 		false,
 		false,
 		false,
-		amqp.Table{
-			"x-max-priority": int32(2),
-		})
+		queueArguments())
 	if err != nil {
 		return nil, fmt.Errorf("failed to declare queue: %w", err)
 	}
