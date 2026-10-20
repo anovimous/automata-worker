@@ -83,7 +83,7 @@ func Run(s *sdk.SDK, command string, args []string, outputPath string) error {
 		case <-ticker.C:
 			if s.IsCancelled() {
 				toolCg.Terminate(5 * time.Second)
-				s.Fail("job was cancelled")
+				s.Cancel("job was cancelled")
 				return nil
 			}
 

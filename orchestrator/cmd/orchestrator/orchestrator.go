@@ -127,9 +127,13 @@ func main() {
 			informer.Inform(jobId, job.StateFailed, "job has failed before start at initial poll due to failure to poll")
 			continue
 		}
-		if initialPollResult.DesiredState != job.StateQueued {
-			log.Error("job has failed before start at initial poll due to desired state not being QUEUED")
-			informer.Inform(jobId, job.StateFailed, "job has failed before start at initial poll due to desired state not being QUEUED")
+		start, report, message := decideInitialPoll(initialPollResult.DesiredState)
+		if !start {
+			if report == "" {
+				log.Info("skipping the message, the job is not waiting to be started", "jobId", jobId, "desiredState", initialPollResult.DesiredState)
+			} else {
+				informer.Inform(jobId, report, message)
+			}
 			continue
 		}
 
@@ -213,4 +217,21 @@ func main() {
 
 	}
 
+}
+
+// decideInitialPoll decides what to do with a job from the state the core
+// answers with before the job is started. Only a QUEUED job is started. A
+// job which the user canceled while it was queued is reported CANCELED. For
+// any other state the message is stale or a duplicate (another orchestrator
+// may be running the job), so the job is not started and nothing is reported
+// (report is empty).
+func decideInitialPoll(desired job.JobState) (start bool, report job.JobState, message string) {
+	switch desired {
+	case job.StateQueued:
+		return true, "", ""
+	case job.StateCanceled:
+		return false, job.StateCanceled, "job was canceled before it started"
+	default:
+		return false, "", ""
+	}
 }
