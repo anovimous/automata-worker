@@ -54,3 +54,19 @@ func TestNextWrapsTheError(t *testing.T) {
 		t.Errorf("ok=%v err=%v, want the wrapped error", ok, err)
 	}
 }
+
+func TestQueueIsDeclaredAsTheCoreDeclaresIt(t *testing.T) {
+	if !queueDurable {
+		t.Error("the queue of the core is durable")
+	}
+
+	args := queueArguments()
+
+	// the type matters: the broker compares the argument with the core's, an int
+	if priority, ok := args["x-max-priority"].(int32); !ok || priority != 2 {
+		t.Errorf("x-max-priority = %#v, want int32(2)", args["x-max-priority"])
+	}
+	if len(args) != 1 {
+		t.Errorf("arguments = %v, want only x-max-priority", args)
+	}
+}
