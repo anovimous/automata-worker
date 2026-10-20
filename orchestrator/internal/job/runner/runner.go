@@ -14,26 +14,16 @@ import (
 
 type Runner struct {
 	heartbeatInterval int
-	tmpDir            string
 }
 
-func New(cfg config.WorkerConfig, tmpDir string) *Runner {
+func New(cfg config.WorkerConfig) *Runner {
 	return &Runner{
 		heartbeatInterval: cfg.HeartbeatInterval,
-		tmpDir:            tmpDir,
 	}
 }
 
-func (r *Runner) Start(jobId int, command string, detailsLocation string, dataLocation string, offReadSocket *socket.Socket, offWriteSocket *socket.Socket) (*process.Process, error) {
-	args := []string{
-		"--jobId", fmt.Sprintf("%d", jobId),
-		"--details", detailsLocation,
-		"--data", dataLocation,
-		"--readSocket", offWriteSocket.Path,
-		"--writeSocket", offReadSocket.Path,
-		"--heartbeatInterval", fmt.Sprintf("%d", r.heartbeatInterval),
-		"--tmpDir", r.tmpDir,
-	}
+func (r *Runner) Start(jobId int, tmpDir string, command string, detailsLocation string, dataLocation string, offReadSocket *socket.Socket, offWriteSocket *socket.Socket) (*process.Process, error) {
+	args := r.connectorArgs(jobId, tmpDir, detailsLocation, dataLocation, offReadSocket, offWriteSocket)
 
 	parts := strings.Fields(command)
 	if len(parts) == 0 {
@@ -70,4 +60,18 @@ func (r *Runner) Start(jobId int, command string, detailsLocation string, dataLo
 	}()
 
 	return process.New(cmd, jobCg), nil
+}
+
+// connectorArgs are the flags the connector is started with. tmpDir is where
+// it writes its own files, so it is the work directory of the job.
+func (r *Runner) connectorArgs(jobId int, tmpDir string, detailsLocation string, dataLocation string, offReadSocket *socket.Socket, offWriteSocket *socket.Socket) []string {
+	return []string{
+		"--jobId", fmt.Sprintf("%d", jobId),
+		"--details", detailsLocation,
+		"--data", dataLocation,
+		"--readSocket", offWriteSocket.Path,
+		"--writeSocket", offReadSocket.Path,
+		"--heartbeatInterval", fmt.Sprintf("%d", r.heartbeatInterval),
+		"--tmpDir", tmpDir,
+	}
 }

@@ -13,10 +13,9 @@ import (
 type Rustfs struct {
 	client *minio.Client
 	cfg    config.RustFSConfig
-	tmpDir string
 }
 
-func New(cfg config.RustFSConfig, tmpDir string) (*Rustfs, error) {
+func New(cfg config.RustFSConfig) (*Rustfs, error) {
 
 	client, err := minio.New(cfg.Endpoint, &minio.Options{
 		Creds:  credentials.NewStaticV4(cfg.AccessKey, cfg.SecretKey, ""),
@@ -26,15 +25,14 @@ func New(cfg config.RustFSConfig, tmpDir string) (*Rustfs, error) {
 		return nil, fmt.Errorf("failed to create rustfs client: %w", err)
 	}
 
-	return &Rustfs{client: client, cfg: cfg, tmpDir: tmpDir}, nil
+	return &Rustfs{client: client, cfg: cfg}, nil
 }
 
-func (r *Rustfs) DownloadJobDetailsAndData(jobId int) (detailsLocalLoc string, dataLocalLoc string, e error) {
+func (r *Rustfs) DownloadJobDetailsAndData(jobId int, dir string) (detailsLocalLoc string, dataLocalLoc string, e error) {
 
 	detailsRemoteObjectName := fmt.Sprintf("details/%d.json", jobId)
 
-	detailsLocalTargetFile := fmt.Sprintf("details-%d.json", jobId)
-	detailsLocalTargetPath := filepath.Join(r.tmpDir, detailsLocalTargetFile)
+	detailsLocalTargetPath, dataLocalTargetPath := localPaths(dir, jobId)
 
 	err := r.client.FGetObject(context.Background(), r.cfg.JobsBucket, detailsRemoteObjectName, detailsLocalTargetPath, minio.GetObjectOptions{})
 	if err != nil {
@@ -43,9 +41,6 @@ func (r *Rustfs) DownloadJobDetailsAndData(jobId int) (detailsLocalLoc string, d
 
 	dataRemoteObjectName := fmt.Sprintf("data/%d.jsonl", jobId)
 
-	dataLocalTargetFile := fmt.Sprintf("data-%d.jsonl", jobId)
-	dataLocalTargetPath := filepath.Join(r.tmpDir, dataLocalTargetFile)
-
 	err = r.client.FGetObject(context.Background(), r.cfg.JobsBucket, dataRemoteObjectName, dataLocalTargetPath, minio.GetObjectOptions{})
 	if err != nil {
 		return "", "", fmt.Errorf("failed to download job DATA file for job %d: %w", jobId, err)
@@ -53,6 +48,11 @@ func (r *Rustfs) DownloadJobDetailsAndData(jobId int) (detailsLocalLoc string, d
 
 	return detailsLocalTargetPath, dataLocalTargetPath, nil
 
+}
+
+// localPaths are the files in dir that the details and the data of the job are downloaded to.
+func localPaths(dir string, jobId int) (details string, data string) {
+	return filepath.Join(dir, fmt.Sprintf("details-%d.json", jobId)), filepath.Join(dir, fmt.Sprintf("data-%d.jsonl", jobId))
 }
 
 func (r *Rustfs) UploadResult(jobId int, localResultsLoc string) error {
