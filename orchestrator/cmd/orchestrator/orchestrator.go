@@ -21,6 +21,9 @@ import (
 	rustfsP "github.com/anovimous/automata-worker/orchestrator/internal/rustfs"
 )
 
+// how long to wait before looking at the queue again when it was empty
+const idleQueuePollInterval = 2 * time.Second
+
 // uploading the result is retried like the reports to the central service
 var uploadPolicy = retry.Policy{Attempts: 5, BaseDelay: time.Second, MaxDelay: 30 * time.Second}
 
@@ -81,21 +84,29 @@ func main() {
 	defer offReadSocket.Listener.Close()
 	defer offWriteSocket.Listener.Close()
 
-	// Get queue messages channel
-	messagesCh, err := consumer.Consume()
-	if err != nil {
-		log.Error("failed to start consuming from rabbitmq", "error", err)
-		os.Exit(1)
-	}
-	// Consume messages when they arrive
-	for msg := range messagesCh {
+	// Take one message at a time, only when no job is running
+	for {
+
+		msg, ok, err := consumer.Next()
+		if err != nil {
+			log.Error("failed to take a message from the queue", "error", err)
+			return
+		}
+		if !ok {
+			time.Sleep(idleQueuePollInterval)
+			continue
+		}
+
+		// The message is acked once the job has started, or when it needs no more
+		// attempts. Until then a crash of this orchestrator puts it back on the queue.
+		ack := ackOnce(func() error { return consumer.Ack(msg) })
 
 		/* MAIN LOOP FLOW:
 		get jobId from message
 		download from rustfs JobDetailsFile and JobData file into TMP_DIR
-		ack message
 		initial poll
 		start the job
+		report RUNNING and ack message
 		start the poller
 		start the watcher
 		*/
@@ -105,7 +116,7 @@ func main() {
 
 		if err := json.Unmarshal(msg.Body, &payload); err != nil {
 			log.Error("failed to unmarshal message payload", "error", err)
-			consumer.Ack(msg)
+			ack()
 			continue
 		}
 
@@ -116,20 +127,17 @@ func main() {
 		if err != nil {
 			log.Error("failed to download from rustfs the required two files", "jobId", jobId, "error", err)
 			inform(informer, jobId, job.StateFailed, "failed to download details and data files from rustfs")
-			consumer.Ack(msg)
+			ack()
 			continue
 		}
 		log.Info("Downloaded from rustfs")
-		// Ack message
-		if err := consumer.Ack(msg); err != nil {
-			log.Error("failed to ack message", "jobId", jobId, "error", err)
-		}
 
 		// Poll initially to make sure there is not state change request
 		initialPollResult, err := poller.SinglePoll(jobId)
 		if err != nil {
 			log.Error("failed to poll central service", "jobId", jobId, "error", err)
 			inform(informer, jobId, job.StateFailed, "job has failed before start at initial poll due to failure to poll")
+			ack()
 			continue
 		}
 		start, report, message := decideInitialPoll(initialPollResult.DesiredState)
@@ -139,6 +147,7 @@ func main() {
 			} else {
 				inform(informer, jobId, report, message)
 			}
+			ack()
 			continue
 		}
 
@@ -147,6 +156,7 @@ func main() {
 		if err != nil {
 			log.Error("failed to find mapping for routineKey", "routineKey", payload.RoutineKey, "jobId", jobId, "error", err)
 			inform(informer, jobId, job.StateFailed, "failed to find mapping for routineKey")
+			ack()
 			continue
 		}
 
@@ -155,11 +165,13 @@ func main() {
 		if err != nil {
 			log.Error("failed to start process", "jobId", jobId, "error", err)
 			inform(informer, jobId, job.StateFailed, fmt.Sprintf("Job process failed to start at orchestrator runner.start: %s", err))
+			ack()
 			continue
 		}
 
 		log.Info("Started job successfully, informing central of RUNNING state", "jobId", jobId)
 		inform(informer, jobId, job.StateRunning, "")
+		ack()
 
 		// Accept connections on sockets
 		activeReader, activeWriter, err1, err2 := socket.AcceptConns(offReadSocket, offWriteSocket, 30)

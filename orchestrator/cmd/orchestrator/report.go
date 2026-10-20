@@ -47,3 +47,22 @@ func completionReport(jobId int, result job.JobResult, upload func(jobId int, re
 
 	return job.StateFinished, result.Message
 }
+
+// ackOnce returns a function which acks a message the first time it is called
+// and does nothing after, since the paths of the main loop that end a message
+// are many and a message can only be acked once. A failure to ack is logged: the
+// message then comes back, and the initial poll skips it.
+func ackOnce(ack func() error) func() {
+	done := false
+
+	return func() {
+		if done {
+			return
+		}
+		done = true
+
+		if err := ack(); err != nil {
+			log.Error("failed to ack the message", "error", err)
+		}
+	}
+}

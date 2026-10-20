@@ -110,3 +110,37 @@ func TestFailedAndCanceledJobsUploadNothingAndKeepTheirState(t *testing.T) {
 		}
 	}
 }
+
+func TestAckOnceAcksOnlyTheFirstTime(t *testing.T) {
+	calls := 0
+	ack := ackOnce(func() error { calls++; return nil })
+
+	ack()
+	ack()
+	ack()
+
+	if calls != 1 {
+		t.Errorf("acked %d times, want 1", calls)
+	}
+}
+
+func TestAckOnceDoesNotTryAgainAfterAFailure(t *testing.T) {
+	calls := 0
+	ack := ackOnce(func() error { calls++; return errors.New("channel closed") })
+
+	ack()
+	ack()
+
+	if calls != 1 {
+		t.Errorf("tried %d times, want 1", calls)
+	}
+}
+
+func TestAckOnceDoesNothingUntilCalled(t *testing.T) {
+	calls := 0
+	ackOnce(func() error { calls++; return nil })
+
+	if calls != 0 {
+		t.Errorf("acked %d times before the call", calls)
+	}
+}

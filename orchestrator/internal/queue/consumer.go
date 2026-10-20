@@ -10,7 +10,13 @@ import (
 type Consumer struct {
 	connection *amqp.Connection
 	channel    *amqp.Channel
+	getter     getter
 	queue      string
+}
+
+// getter is what Next needs of a channel, so that it can be replaced in tests.
+type getter interface {
+	Get(queue string, autoAck bool) (msg amqp.Delivery, ok bool, err error)
 }
 
 type Message struct {
@@ -30,11 +36,6 @@ func New(cfg config.RabbitMQConfig) (*Consumer, error) {
 		return nil, fmt.Errorf("failed to open channel: %w", err)
 	}
 
-	err = channel.Qos(1, 0, false)
-	if err != nil {
-		return nil, fmt.Errorf("failed to set prefetch count: %w", err)
-	}
-
 	_, err = channel.QueueDeclare(
 		cfg.Queue,
 		true,
@@ -51,27 +52,24 @@ func New(cfg config.RabbitMQConfig) (*Consumer, error) {
 	return &Consumer{
 		connection: conn,
 		channel:    channel,
+		getter:     channel,
 		queue:      cfg.Queue,
 	}, nil
 
 }
 
-func (c *Consumer) Consume() (<-chan amqp.Delivery, error) {
+// Next takes one message from the queue, or reports ok false when it is empty.
+// The messages are pulled one at a time, only when the orchestrator is free, so
+// that a message does not wait in the buffer of a busy orchestrator while an idle
+// one could run it. It has to be acked by the caller.
+func (c *Consumer) Next() (msg amqp.Delivery, ok bool, err error) {
 
-	messages, err := c.channel.Consume(
-		c.queue, // queue name
-		"",      // consumer tag, empty means auto generated
-		false,   // auto ack, false means we ack manually
-		false,   // exclusive
-		false,   // no local
-		false,   // no wait
-		nil,     // arguments
-	)
+	msg, ok, err = c.getter.Get(c.queue, false)
 	if err != nil {
-		return nil, fmt.Errorf("failed to register consumer: %w", err)
+		return amqp.Delivery{}, false, fmt.Errorf("failed to get a message from rabbitmq: %w", err)
 	}
 
-	return messages, nil
+	return msg, ok, nil
 
 }
 
