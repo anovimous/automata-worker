@@ -74,6 +74,12 @@ func AcceptConns(s1 *Socket, s2 *Socket, timeoutSecs int) (*Socket, *Socket, err
 	s2.Listener.(*net.UnixListener).SetDeadline(time.Time{})
 
 	if e1 != nil || e2 != nil {
+		// one side may have connected, it must not be left open
+		for _, conn := range []net.Conn{conn1, conn2} {
+			if conn != nil {
+				conn.Close()
+			}
+		}
 		return nil, nil, e1, e2
 	}
 

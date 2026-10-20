@@ -184,6 +184,8 @@ func main() {
 				ack()
 				return
 			}
+			// the job cgroup exists from here on, so it goes away on every exit path
+			defer process.Cgroup().Destroy()
 
 			log.Info("Started job successfully, informing central of RUNNING state", "jobId", jobId)
 			inform(informer, jobId, job.StateRunning, "")
@@ -259,8 +261,6 @@ func main() {
 
 			activeReader.Connection.Close()
 			activeWriter.Connection.Close()
-
-			process.Cgroup().Destroy()
 		}()
 
 	}
