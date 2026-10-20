@@ -9,13 +9,13 @@ type Job struct {
 type JobState string
 
 const (
-	StateQueued     JobState = "QUEUED"
-	StateRunning    JobState = "RUNNING"
-	StatePaused     JobState = "PAUSED"
-	StateCanceled   JobState = "CANCELED"
-	StateFinished   JobState = "FINISHED"
-	StateFailed     JobState = "FAILED"
-	StateTerminated JobState = "TERMINATED"
+	StateQueued         JobState = "QUEUED"
+	StateRunning        JobState = "RUNNING"
+	StatePaused         JobState = "PAUSED"
+	StateCanceled       JobState = "CANCELED"
+	StateFinished       JobState = "FINISHED"
+	StateFailed         JobState = "FAILED"
+	StateSelfTerminated JobState = "SELFTERMINATED"
 )
 
 type JobMessage struct {
