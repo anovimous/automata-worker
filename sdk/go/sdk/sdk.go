@@ -183,11 +183,22 @@ func (s *SDK) Finish(resultPath string) {
 }
 
 func (s *SDK) Fail(message string) {
+	s.finishWithoutResult("FAILED", message)
+	log.Info("SDK: s.Fail()")
+}
+
+// Cancel reports that the job ended because the user canceled it.
+func (s *SDK) Cancel(message string) {
+	s.finishWithoutResult("CANCELED", message)
+	log.Info("SDK: s.Cancel()")
+}
+
+func (s *SDK) finishWithoutResult(finishState string, message string) {
 	s.sendMessage(finishMessage{
 		Type: "finish",
 		Result: jobResult{
 			Message:     message,
-			FinishState: "FAILED",
+			FinishState: finishState,
 		},
 	})
 
@@ -195,7 +206,6 @@ func (s *SDK) Fail(message string) {
 		s.readConn.Close()
 		s.writeConn.Close()
 	}
-	log.Info("SDK: s.Fail()")
 }
 
 func (s *SDK) sendMessage(msg any) error {
