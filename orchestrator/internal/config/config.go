@@ -34,8 +34,7 @@ func Load() (config *Config, error error) {
 			HeartbeatInterval: toInt(os.Getenv("WORKER_HEARTBEAT_INTERVAL_SECONDS")),
 			SocketDir:         os.Getenv("WORKER_SOCKET_DIR"),
 		},
-		TempDir:      os.Getenv("TEMP_DIR"),
-		MappingsFile: os.Getenv("MAPPINGS_FILE"),
+		TempDir: os.Getenv("TEMP_DIR"),
 	}, nil
 }
 
@@ -45,12 +44,11 @@ func toInt(s string) int {
 }
 
 type Config struct {
-	RabbitMQ     RabbitMQConfig
-	RustFS       RustFSConfig
-	Central      CentralConfig
-	Worker       WorkerConfig
-	TempDir      string
-	MappingsFile string
+	RabbitMQ RabbitMQConfig
+	RustFS   RustFSConfig
+	Central  CentralConfig
+	Worker   WorkerConfig
+	TempDir  string
 }
 
 type RabbitMQConfig struct {
@@ -64,10 +62,6 @@ type RustFSConfig struct {
 	SecretKey     string `json:"secretKey"`
 	JobsBucket    string `json:"jobsBucket"`
 	ResultsBucket string `json:"resultsBucket"`
-}
-
-type RedisConfig struct {
-	URL string `json:"url"`
 }
 
 type CentralConfig struct {
