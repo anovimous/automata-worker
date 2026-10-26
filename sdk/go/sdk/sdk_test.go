@@ -40,10 +40,32 @@ func TestCancelReportsTheCanceledState(t *testing.T) {
 }
 
 func TestFailReportsTheFailedState(t *testing.T) {
-	msg := finishSentBy(t, func(s *SDK) { s.Fail("boom") })
+	msg := finishSentBy(t, func(s *SDK) { s.Fail(InvalidConfig, "boom") })
 
-	if msg.Type != "finish" || msg.Result.FinishState != "FAILED" || msg.Result.Message != "boom" {
+	if msg.Type != "finish" || msg.Result.FinishState != "FAILED" || msg.Result.Message != "boom" || msg.Result.FailureCategory != InvalidConfig {
 		t.Errorf("unexpected message %+v", msg)
+	}
+}
+
+func TestEachFailureCategoryIsSentAsItsContractName(t *testing.T) {
+	for category, want := range map[FailureCategory]string{
+		ToolStart:     "TOOL_START",
+		ToolExit:      "TOOL_EXIT",
+		InvalidConfig: "INVALID_CONFIG",
+	} {
+		msg := finishSentBy(t, func(s *SDK) { s.Fail(category, "x") })
+
+		if string(msg.Result.FailureCategory) != want {
+			t.Errorf("category %q sent as %q, want %q", category, msg.Result.FailureCategory, want)
+		}
+	}
+}
+
+func TestCancelSendsNoFailureCategory(t *testing.T) {
+	msg := finishSentBy(t, func(s *SDK) { s.Cancel("stop") })
+
+	if msg.Result.FailureCategory != "" {
+		t.Errorf("a cancel carries the category %q", msg.Result.FailureCategory)
 	}
 }
 
@@ -51,7 +73,7 @@ func TestCancelAndFailAreNoOpsWhenStandalone(t *testing.T) {
 	s := &SDK{standalone: true}
 
 	s.Cancel("x")
-	s.Fail("x")
+	s.Fail(ToolExit, "x")
 }
 
 func logsOf(t *testing.T, run func()) string {
@@ -86,7 +108,7 @@ func TestAFailedFinishReportIsLogged(t *testing.T) {
 
 func TestAFailedFailAndCancelReportIsLogged(t *testing.T) {
 	for name, run := range map[string]func(s *SDK){
-		"fail":   func(s *SDK) { s.Fail("boom") },
+		"fail":   func(s *SDK) { s.Fail(ToolExit, "boom") },
 		"cancel": func(s *SDK) { s.Cancel("stop") },
 	} {
 		out := logsOf(t, func() { run(brokenSDK()) })
