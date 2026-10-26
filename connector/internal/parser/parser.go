@@ -10,15 +10,17 @@ import (
 // Main struct
 
 type JobDetails struct {
-	JobId          int             `json:"jobId"`
-	RoutineKey     string          `json:"routineKey"`
-	Rate           int             `json:"rate"`
-	Verbosity      string          `json:"verbosity"`
-	Auth           AuthDataWrapper `json:"auth"`
-	TargetType     string          `json:"targetType"`
-	GenericConfig  GenericConfig   `json:"genericConfig"`
-	CustomConfig   json.RawMessage `json:"customConfig"`
-	WordListsPaths []string        `json:"wordlistsPaths"`
+	JobId         int             `json:"jobId"`
+	RoutineKey    string          `json:"routineKey"`
+	Rate          int             `json:"rate"`
+	Verbosity     string          `json:"verbosity"`
+	Auth          AuthDataWrapper `json:"auth"`
+	TargetType    string          `json:"targetType"`
+	GenericConfig GenericConfig   `json:"genericConfig"`
+	CustomConfig  json.RawMessage `json:"customConfig"`
+	// WordListsPaths are local files: the core only names the wordlists, and the orchestrator downloads
+	// them and writes their paths here (in the order the core gave) before it starts the connector
+	WordListsPaths []string `json:"wordlistsPaths"`
 }
 
 // Authentication Details

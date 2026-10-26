@@ -20,6 +20,7 @@ import (
 	queueP "github.com/anovimous/automata-worker/orchestrator/internal/queue"
 	"github.com/anovimous/automata-worker/orchestrator/internal/retry"
 	rustfsP "github.com/anovimous/automata-worker/orchestrator/internal/rustfs"
+	wordlistP "github.com/anovimous/automata-worker/orchestrator/internal/wordlist"
 )
 
 // how long to wait before looking at the queue again when it was empty
@@ -27,6 +28,13 @@ const idleQueuePollInterval = 2 * time.Second
 
 // uploading the result is retried like the reports to the central service
 var uploadPolicy = retry.Policy{Attempts: 5, BaseDelay: time.Second, MaxDelay: 30 * time.Second}
+
+// how long the wordlists of a job may take to download; the queue message stays unacked meanwhile, and
+// RabbitMQ's own limit for that is 30 minutes
+const wordlistDownloadTimeout = 20 * time.Minute
+
+// a wordlist download is retried (a dropped connection, a file which came out wrong) before the job fails
+var wordlistPolicy = retry.Policy{Attempts: 3, BaseDelay: 2 * time.Second, MaxDelay: 15 * time.Second}
 
 func main() {
 
@@ -48,6 +56,13 @@ func main() {
 	rustfs, err := rustfsP.New(cfg.RustFS)
 	if err != nil {
 		log.Error("failed to create rustfs client", "error", err)
+		os.Exit(1)
+	}
+
+	// Create the cache of the wordlist files
+	wordlists, err := wordlistP.New(cfg.WordlistCache.Dir, cfg.WordlistCache.MaxBytes, rustfs, wordlistPolicy)
+	if err != nil {
+		log.Error("failed to create the wordlist cache", "error", err)
 		os.Exit(1)
 	}
 
@@ -106,6 +121,7 @@ func main() {
 		get jobId from message
 		download from rustfs JobDetailsFile and JobData file into TMP_DIR
 		initial poll
+		get the wordlists into the cache and give the connector their paths
 		start the job
 		report RUNNING and ack message
 		start the poller
@@ -166,6 +182,19 @@ func main() {
 				ack()
 				return
 			}
+
+			// Get the wordlists of the job into the cache, after the poll so that a job which is not
+			// started does not download them
+			wordlistsCtx, cancelWordlists := context.WithTimeout(context.Background(), wordlistDownloadTimeout)
+			releaseWordlists, err := prepareWordlists(wordlistsCtx, wordlists, detailsLocation)
+			cancelWordlists()
+			if err != nil {
+				log.Error("failed to prepare the wordlists", "jobId", jobId, "error", err)
+				inform(informer, jobId, job.StateFailed, fmt.Sprintf("failed to prepare the wordlists: %s", err), job.FailurePreparation)
+				ack()
+				return
+			}
+			defer releaseWordlists()
 
 			// Get the command tagged to the RoutineKey
 			command, err := mapper.Lookup(payload.RoutineKey)

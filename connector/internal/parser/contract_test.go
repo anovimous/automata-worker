@@ -7,11 +7,13 @@ import (
 )
 
 // The details files are the samples which the core's tests write with its own
-// code (contract/samples, a copy of src/test/resources/contract in the core).
+// code (contract/samples, a copy of src/test/resources/contract in the core), and
+// details-file-resolved.json, the worker's own sample of what the orchestrator hands
+// the connector: the file of the core with the paths of the downloaded wordlists.
 const samples = "../../../contract/samples"
 
 func TestParseDetailsFileWithAuthentication(t *testing.T) {
-	got, err := Parse(filepath.Join(samples, "details-file.json"))
+	got, err := Parse(filepath.Join(samples, "details-file-resolved.json"))
 	if err != nil {
 		t.Fatalf("Parse returned an error: %v", err)
 	}
@@ -19,7 +21,7 @@ func TestParseDetailsFileWithAuthentication(t *testing.T) {
 	if got.JobId != 42 || got.RoutineKey != "fuzz" || got.Rate != 50 || got.Verbosity != "NORMAL" || got.TargetType != "REQUEST" {
 		t.Errorf("scalars not read: %+v", got)
 	}
-	if !reflect.DeepEqual(got.WordListsPaths, []string{"/wordlists/common.txt"}) {
+	if !reflect.DeepEqual(got.WordListsPaths, []string{"/var/cache/automata/wordlists/ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"}) {
 		t.Errorf("wordlists = %v", got.WordListsPaths)
 	}
 	if want := []AuthNameValuePair{{Key: "Authorization", Value: "Bearer token"}}; !reflect.DeepEqual(got.Auth.Data.Headers, want) {
@@ -36,6 +38,18 @@ func TestParseDetailsFileWithAuthentication(t *testing.T) {
 	}
 	if len(got.CustomConfig) == 0 {
 		t.Error("customConfig is empty")
+	}
+}
+
+// A connector started on the file of the core, which the orchestrator did not resolve, finds no wordlists
+func TestTheDetailsFileOfTheCoreHasNoWordlistPathsYet(t *testing.T) {
+	got, err := Parse(filepath.Join(samples, "details-file.json"))
+	if err != nil {
+		t.Fatalf("Parse returned an error: %v", err)
+	}
+
+	if got.WordListsPaths == nil || len(got.WordListsPaths) != 0 {
+		t.Errorf("wordlists = %#v, want an empty list", got.WordListsPaths)
 	}
 }
 

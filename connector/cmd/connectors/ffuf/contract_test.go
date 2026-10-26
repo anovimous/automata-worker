@@ -10,8 +10,9 @@ import (
 	"github.com/anovimous/automata-worker/connector/internal/parser"
 )
 
+// the details file as the orchestrator hands it over: the core's file with the local wordlist paths
 func TestBuildCommandFromTheDetailsFileOfTheCore(t *testing.T) {
-	details, err := parser.Parse("../../../../contract/samples/details-file.json")
+	details, err := parser.Parse("../../../../contract/samples/details-file-resolved.json")
 	if err != nil {
 		t.Fatalf("Parse returned an error: %v", err)
 	}
@@ -26,7 +27,7 @@ func TestBuildCommandFromTheDetailsFileOfTheCore(t *testing.T) {
 		t.Errorf("command = %s", command)
 	}
 	joined := strings.Join(args, "\x00")
-	for _, pair := range [][]string{{"-w", "/wordlists/common.txt"}, {"-rate", "50"}, {"-b", "session=abc"}, {"-H", "Authorization: Bearer token"}, {"-H", "X-Test: 1"}, {"-mc", "200"}, {"-o", output}} {
+	for _, pair := range [][]string{{"-w", "/var/cache/automata/wordlists/ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"}, {"-rate", "50"}, {"-b", "session=abc"}, {"-H", "Authorization: Bearer token"}, {"-H", "X-Test: 1"}, {"-mc", "200"}, {"-o", output}} {
 		if !strings.Contains(joined, pair[0]+"\x00"+pair[1]) {
 			t.Errorf("args %v miss %v", args, pair)
 		}
