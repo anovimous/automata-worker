@@ -9,6 +9,16 @@ services:
     network_mode: host
     env_file:
       - ./orchestrator/.env
+    environment:
+      # the files of the wordlists are downloaded from this bucket and kept in the cache directory
+      RUSTFS_WORDLISTS_BUCKET: wordlists
+      WORDLIST_CACHE_DIR: /var/cache/automata/wordlists
+      # 1.5 GB; the least recently used files are removed above it
+      WORDLIST_CACHE_MAX_BYTES: "1610612736"
     volumes:
-      - /home/haidar/cbr:/home/haidar/cbr
       - /var/tmp:/var/tmp
+      # the cache survives restarts; give it a few GB more than the size above (the files of a running job are never removed)
+      - wordlist_cache:/var/cache/automata/wordlists
+
+volumes:
+  wordlist_cache:

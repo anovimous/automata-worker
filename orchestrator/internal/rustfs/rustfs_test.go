@@ -17,3 +17,9 @@ func TestLocalPathsAreInsideTheJobDirectory(t *testing.T) {
 		t.Errorf("data = %s, want %s", data, want)
 	}
 }
+
+func TestWordlistObjectIsNamedByTheIdOfTheWordlist(t *testing.T) {
+	if got := wordlistObjectName(42); got != "42" {
+		t.Errorf("wordlistObjectName = %q, want 42", got)
+	}
+}

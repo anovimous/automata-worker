@@ -3,7 +3,9 @@ package rustfs
 import (
 	"context"
 	"fmt"
+	"io"
 	"path/filepath"
+	"strconv"
 
 	"github.com/anovimous/automata-worker/orchestrator/internal/config"
 	minio "github.com/minio/minio-go/v7"
@@ -48,6 +50,28 @@ func (r *Rustfs) DownloadJobDetailsAndData(jobId int, dir string) (detailsLocalL
 
 	return detailsLocalTargetPath, dataLocalTargetPath, nil
 
+}
+
+// DownloadWordlist streams the file of the wordlist (the object named by its id in the wordlists bucket) to w.
+func (r *Rustfs) DownloadWordlist(ctx context.Context, id int64, w io.Writer) error {
+
+	object, err := r.client.GetObject(ctx, r.cfg.WordlistsBucket, wordlistObjectName(id), minio.GetObjectOptions{})
+	if err != nil {
+		return fmt.Errorf("failed to open wordlist %d: %w", id, err)
+	}
+	defer object.Close()
+
+	// the object is read lazily, a missing one fails here
+	if _, err := io.Copy(w, object); err != nil {
+		return fmt.Errorf("failed to download wordlist %d: %w", id, err)
+	}
+
+	return nil
+}
+
+// wordlistObjectName is the key the core stores the file of a wordlist under.
+func wordlistObjectName(id int64) string {
+	return strconv.FormatInt(id, 10)
 }
 
 // localPaths are the files in dir that the details and the data of the job are downloaded to.
