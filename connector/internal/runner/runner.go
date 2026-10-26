@@ -21,7 +21,7 @@ func Run(s *sdk.SDK, command string, args []string, outputPath string) error {
 
 	toolCg, err := cgroup.New(toolCgName)
 	if err != nil {
-		s.Fail(fmt.Sprintf("failed to create tool cgroup: %v", err))
+		s.Fail(sdk.ToolStart, fmt.Sprintf("failed to create tool cgroup: %v", err))
 		return fmt.Errorf("failed to create tool cgroup: %w", err)
 	}
 	defer func() {
@@ -38,7 +38,7 @@ func Run(s *sdk.SDK, command string, args []string, outputPath string) error {
 
 	// Move self into tool cgroup so ffuf inherits it at fork time
 	if err := toolCg.AddPid(os.Getpid()); err != nil {
-		s.Fail(fmt.Sprintf("failed to move self into tool cgroup: %v", err))
+		s.Fail(sdk.ToolStart, fmt.Sprintf("failed to move self into tool cgroup: %v", err))
 		return fmt.Errorf("failed to move self into tool cgroup: %w", err)
 	}
 
@@ -47,7 +47,7 @@ func Run(s *sdk.SDK, command string, args []string, outputPath string) error {
 		if jobCg, e := cgroup.Open(jobCgName); e == nil {
 			jobCg.AddPid(os.Getpid())
 		}
-		s.Fail(fmt.Sprintf("failed to start tool: %v, full command is: %s %s, the output path is: %s", err, command, strings.Join(args, " "), outputPath))
+		s.Fail(sdk.ToolStart, fmt.Sprintf("failed to start tool: %v, full command is: %s %s, the output path is: %s", err, command, strings.Join(args, " "), outputPath))
 		return fmt.Errorf("failed to start tool: %w", err)
 	}
 
@@ -76,7 +76,7 @@ func Run(s *sdk.SDK, command string, args []string, outputPath string) error {
 		select {
 		case err := <-doneCh:
 			if err != nil {
-				s.Fail(fmt.Sprintf("tool exited with error: %v, full command was: %s %s", err, command, strings.Join(args, " ")))
+				s.Fail(sdk.ToolExit, fmt.Sprintf("tool exited with error: %v, full command was: %s %s", err, command, strings.Join(args, " ")))
 				return fmt.Errorf("tool exited with error: %w", err)
 			}
 			s.Finish(outputPath)

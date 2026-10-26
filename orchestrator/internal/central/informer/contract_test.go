@@ -14,7 +14,7 @@ func TestReportIsWhatTheCoreExpects(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	written, err := json.Marshal(informMessage{JobId: 42, State: job.StateFailed, Msg: "failed to start the tool"})
+	written, err := json.Marshal(informMessage{JobId: 42, State: job.StateFailed, Msg: "failed to build command from job details: the job has no wordlist, ffuf needs one", FailureCategory: job.FailureInvalidConfig})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -25,7 +25,7 @@ func main() {
 	jobDetails, err := parser.Parse(s.DetailsPath())
 	if err != nil {
 		log.Error("failed to parse job details", "error", err)
-		s.Fail(fmt.Sprintf("failed to parse job details: %v", err))
+		s.Fail(sdk.InvalidConfig, fmt.Sprintf("failed to parse job details: %v", err))
 		os.Exit(1)
 	}
 	log.Info("JOB DETAILS PARSED")
@@ -34,7 +34,7 @@ func main() {
 	command, args, outputFilePath, err := BuildCommand(jobDetails, tmpDir)
 	if err != nil {
 		log.Error("failed to build command from job details", "error", err)
-		s.Fail(fmt.Sprintf("failed to build command from job details: %v", err))
+		s.Fail(sdk.InvalidConfig, fmt.Sprintf("failed to build command from job details: %v", err))
 		os.Exit(1)
 	}
 

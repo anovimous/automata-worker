@@ -46,10 +46,24 @@ type finishMessage struct {
 }
 
 type jobResult struct {
-	ResultFilePath string `json:"resultPath"`
-	Message        string `json:"message"`
-	FinishState    string `json:"finishState"`
+	ResultFilePath  string          `json:"resultPath"`
+	Message         string          `json:"message"`
+	FinishState     string          `json:"finishState"`
+	FailureCategory FailureCategory `json:"failureCategory,omitempty"`
 }
+
+// FailureCategory tells the core what kind of failure ended the job, so a reader knows what to do next. The values
+// are the ones of the contract (FailureCategory in the core); the core reads any other as UNKNOWN.
+type FailureCategory string
+
+const (
+	// the tool could not be started
+	ToolStart FailureCategory = "TOOL_START"
+	// the tool ran and exited with an error
+	ToolExit FailureCategory = "TOOL_EXIT"
+	// the job details could not be parsed or turned into a command
+	InvalidConfig FailureCategory = "INVALID_CONFIG"
+)
 
 func New() (*SDK, error) {
 	jobId := flag.Int("jobId", 0, "job id")
@@ -182,23 +196,24 @@ func (s *SDK) Finish(resultPath string) {
 	log.Info("SDK: s.Finish()")
 }
 
-func (s *SDK) Fail(message string) {
-	s.finishWithoutResult("FAILED", message)
+func (s *SDK) Fail(category FailureCategory, message string) {
+	s.finishWithoutResult("FAILED", category, message)
 	log.Info("SDK: s.Fail()")
 }
 
 // Cancel reports that the job ended because the user canceled it.
 func (s *SDK) Cancel(message string) {
-	s.finishWithoutResult("CANCELED", message)
+	s.finishWithoutResult("CANCELED", "", message)
 	log.Info("SDK: s.Cancel()")
 }
 
-func (s *SDK) finishWithoutResult(finishState string, message string) {
+func (s *SDK) finishWithoutResult(finishState string, category FailureCategory, message string) {
 	s.sendLogged("finish", finishMessage{
 		Type: "finish",
 		Result: jobResult{
-			Message:     message,
-			FinishState: finishState,
+			Message:         message,
+			FinishState:     finishState,
+			FailureCategory: category,
 		},
 	})
 
