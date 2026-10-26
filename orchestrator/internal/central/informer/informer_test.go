@@ -29,12 +29,12 @@ func TestInformPostsTheStateToTheJobEndpoint(t *testing.T) {
 	}))
 	defer server.Close()
 
-	err := informerFor(server).Inform(7, job.StateFailed, "boom")
+	err := informerFor(server).Inform(7, job.StateFailed, "boom", job.FailureToolExit)
 
 	if err != nil {
 		t.Fatalf("unexpected error %v", err)
 	}
-	if gotPath != "/update/7" || got.JobId != 7 || got.State != job.StateFailed || got.Msg != "boom" {
+	if gotPath != "/update/7" || got.JobId != 7 || got.State != job.StateFailed || got.Msg != "boom" || got.FailureCategory != job.FailureToolExit {
 		t.Errorf("path=%s message=%+v", gotPath, got)
 	}
 }
@@ -50,7 +50,7 @@ func TestInformRetriesServerErrorsUntilItSucceeds(t *testing.T) {
 	}))
 	defer server.Close()
 
-	err := informerFor(server).Inform(1, job.StateRunning, "")
+	err := informerFor(server).Inform(1, job.StateRunning, "", "")
 
 	if err != nil || calls != 3 {
 		t.Errorf("err=%v calls=%d", err, calls)
@@ -65,7 +65,7 @@ func TestInformGivesUpWhenTheServerKeepsFailing(t *testing.T) {
 	}))
 	defer server.Close()
 
-	err := informerFor(server).Inform(1, job.StateRunning, "")
+	err := informerFor(server).Inform(1, job.StateRunning, "", "")
 
 	if err == nil || calls != 3 {
 		t.Errorf("err=%v calls=%d", err, calls)
@@ -81,7 +81,7 @@ func TestInformDoesNotRetryARejectedReport(t *testing.T) {
 	}))
 	defer server.Close()
 
-	err := informerFor(server).Inform(1, job.StateRunning, "")
+	err := informerFor(server).Inform(1, job.StateRunning, "", "")
 
 	if calls != 1 {
 		t.Errorf("calls=%d, want 1", calls)
@@ -101,7 +101,7 @@ func TestInformRetriesWhenTheServerIsUnreachable(t *testing.T) {
 	i.retry = retry.Policy{Attempts: 3, BaseDelay: time.Millisecond, MaxDelay: time.Millisecond,
 		Sleep: func(time.Duration) { attempts++ }}
 
-	err := i.Inform(1, job.StateRunning, "")
+	err := i.Inform(1, job.StateRunning, "", "")
 
 	if err == nil || attempts != 2 {
 		t.Errorf("err=%v waits=%d, want 2 waits between 3 attempts", err, attempts)
@@ -121,9 +121,20 @@ func TestInformTimesOutOnAHungServer(t *testing.T) {
 	i.retry.Attempts = 1
 
 	start := time.Now()
-	err := i.Inform(1, job.StateRunning, "")
+	err := i.Inform(1, job.StateRunning, "", "")
 
 	if err == nil || time.Since(start) > 2*time.Second {
 		t.Errorf("err=%v took %v, want a timeout error", err, time.Since(start))
+	}
+}
+
+func TestAReportWithoutACategoryLeavesTheFieldOut(t *testing.T) {
+	written, err := json.Marshal(informMessage{JobId: 1, State: job.StateRunning})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if strings.Contains(string(written), "failureCategory") {
+		t.Errorf("report = %s, it should not carry an empty category", written)
 	}
 }

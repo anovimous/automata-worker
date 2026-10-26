@@ -1,1 +1,1 @@
-{"jobId":42,"newState":"FAILED","message":"failed to start the tool"}
+{"jobId":42,"newState":"FAILED","message":"failed to build command from job details: the job has no wordlist, ffuf needs one","failureCategory":"INVALID_CONFIG"}

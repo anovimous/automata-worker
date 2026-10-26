@@ -12,24 +12,25 @@ import (
 
 type fakeInformer struct {
 	err    error
-	jobId  int
-	state  job.JobState
-	called int
+	jobId    int
+	state    job.JobState
+	category job.FailureCategory
+	called   int
 }
 
-func (f *fakeInformer) Inform(jobId int, state job.JobState, message string) error {
+func (f *fakeInformer) Inform(jobId int, state job.JobState, message string, category job.FailureCategory) error {
 	f.called++
-	f.jobId, f.state = jobId, state
+	f.jobId, f.state, f.category = jobId, state, category
 	return f.err
 }
 
 func TestInformPassesTheReportOn(t *testing.T) {
 	f := &fakeInformer{}
 
-	if err := inform(f, 4, job.StateRunning, ""); err != nil {
+	if err := inform(f, 4, job.StateFailed, "boom", job.FailureToolExit); err != nil {
 		t.Errorf("unexpected error %v", err)
 	}
-	if f.called != 1 || f.jobId != 4 || f.state != job.StateRunning {
+	if f.called != 1 || f.jobId != 4 || f.state != job.StateFailed || f.category != job.FailureToolExit {
 		t.Errorf("informer=%+v", f)
 	}
 }
@@ -37,7 +38,7 @@ func TestInformPassesTheReportOn(t *testing.T) {
 func TestInformReturnsTheFailureOfTheInformer(t *testing.T) {
 	failure := errors.New("core is down")
 
-	if err := inform(&fakeInformer{err: failure}, 4, job.StateRunning, ""); !errors.Is(err, failure) {
+	if err := inform(&fakeInformer{err: failure}, 4, job.StateRunning, "", ""); !errors.Is(err, failure) {
 		t.Errorf("err=%v, want %v", err, failure)
 	}
 }
@@ -63,11 +64,11 @@ func TestFinishedJobIsUploadedAndReportedFinished(t *testing.T) {
 	var uploadedId int
 	var uploadedPath string
 
-	state, message := completionReport(5, job.JobResult{FinishState: job.StateFinished, ResultFilePath: path, Message: "done"},
+	state, message, category := completionReport(5, job.JobResult{FinishState: job.StateFinished, ResultFilePath: path, Message: "done"},
 		func(id int, p string) error { uploadedId, uploadedPath = id, p; return nil })
 
-	if state != job.StateFinished || message != "done" {
-		t.Errorf("state=%s message=%q", state, message)
+	if state != job.StateFinished || message != "done" || category != "" {
+		t.Errorf("state=%s message=%q category=%q", state, message, category)
 	}
 	if uploadedId != 5 || uploadedPath != path {
 		t.Errorf("uploaded %d %s", uploadedId, uploadedPath)
@@ -75,38 +76,38 @@ func TestFinishedJobIsUploadedAndReportedFinished(t *testing.T) {
 }
 
 func TestFinishedJobWhoseUploadFailsIsReportedFailed(t *testing.T) {
-	state, message := completionReport(5, job.JobResult{FinishState: job.StateFinished, ResultFilePath: resultFile(t)},
+	state, message, category := completionReport(5, job.JobResult{FinishState: job.StateFinished, ResultFilePath: resultFile(t)},
 		func(int, string) error { return errors.New("bucket is gone") })
 
-	if state != job.StateFailed || !strings.Contains(message, "failed to upload") || !strings.Contains(message, "bucket is gone") {
-		t.Errorf("state=%s message=%q", state, message)
+	if state != job.StateFailed || !strings.Contains(message, "failed to upload") || !strings.Contains(message, "bucket is gone") || category != job.FailureResult {
+		t.Errorf("state=%s message=%q category=%q", state, message, category)
 	}
 }
 
 func TestFinishedJobWithoutAResultPathIsReportedFailed(t *testing.T) {
-	state, message := completionReport(5, job.JobResult{FinishState: job.StateFinished}, neverUploaded(t))
+	state, message, category := completionReport(5, job.JobResult{FinishState: job.StateFinished}, neverUploaded(t))
 
-	if state != job.StateFailed || !strings.Contains(message, "without a result file") {
-		t.Errorf("state=%s message=%q", state, message)
+	if state != job.StateFailed || !strings.Contains(message, "without a result file") || category != job.FailureResult {
+		t.Errorf("state=%s message=%q category=%q", state, message, category)
 	}
 }
 
 func TestFinishedJobWhoseResultFileIsMissingIsReportedFailed(t *testing.T) {
 	missing := filepath.Join(t.TempDir(), "gone.result")
 
-	state, message := completionReport(5, job.JobResult{FinishState: job.StateFinished, ResultFilePath: missing}, neverUploaded(t))
+	state, message, category := completionReport(5, job.JobResult{FinishState: job.StateFinished, ResultFilePath: missing}, neverUploaded(t))
 
-	if state != job.StateFailed || !strings.Contains(message, "missing") {
-		t.Errorf("state=%s message=%q", state, message)
+	if state != job.StateFailed || !strings.Contains(message, "missing") || category != job.FailureResult {
+		t.Errorf("state=%s message=%q category=%q", state, message, category)
 	}
 }
 
 func TestFailedAndCanceledJobsUploadNothingAndKeepTheirState(t *testing.T) {
 	for _, finish := range []job.JobState{job.StateFailed, job.StateCanceled} {
-		state, message := completionReport(5, job.JobResult{FinishState: finish, Message: "why"}, neverUploaded(t))
+		state, message, category := completionReport(5, job.JobResult{FinishState: finish, Message: "why", FailureCategory: job.FailureToolExit}, neverUploaded(t))
 
-		if state != finish || message != "why" {
-			t.Errorf("%s: state=%s message=%q", finish, state, message)
+		if state != finish || message != "why" || category != job.FailureToolExit {
+			t.Errorf("%s: state=%s message=%q category=%q", finish, state, message, category)
 		}
 	}
 }

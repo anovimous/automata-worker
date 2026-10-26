@@ -32,9 +32,10 @@ type Informer struct {
 }
 
 type informMessage struct {
-	JobId int          `json:"jobId"`
-	State job.JobState `json:"newState"`
-	Msg   string       `json:"message"`
+	JobId           int                 `json:"jobId"`
+	State           job.JobState        `json:"newState"`
+	Msg             string              `json:"message"`
+	FailureCategory job.FailureCategory `json:"failureCategory,omitempty"`
 }
 
 func New(baseURL, outcomeEndpoint string) *Informer {
@@ -49,11 +50,12 @@ func New(baseURL, outcomeEndpoint string) *Informer {
 // a timeout or a 5xx answer is retried with a backoff. Any other answer than
 // 204 means the central service rejected the report, which a retry can't fix,
 // so it is returned at once.
-func (i *Informer) Inform(jobId int, state job.JobState, message string) error {
+func (i *Informer) Inform(jobId int, state job.JobState, message string, category job.FailureCategory) error {
 	payload := informMessage{
-		JobId: jobId,
-		State: state,
-		Msg:   message,
+		JobId:           jobId,
+		State:           state,
+		Msg:             message,
+		FailureCategory: category,
 	}
 
 	body, err := json.Marshal(payload)
