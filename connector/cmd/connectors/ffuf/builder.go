@@ -31,9 +31,12 @@ func BuildCommand(j *parser.JobDetails, tmpDir string) (command string, args []s
 		return "", nil, "", fmt.Errorf("JobDetails.CustomConfig is not of allowed form for this routine: %w", err)
 	}
 
-	// ffuf takes one wordlist; the core sends a set, so the first one is used
+	// ffuf takes exactly one wordlist; the core sends a set, so anything else is refused
 	if len(j.WordListsPaths) == 0 {
 		return "", nil, "", fmt.Errorf("The job has no wordlist, ffuf needs one")
+	}
+	if len(j.WordListsPaths) > 1 {
+		return "", nil, "", fmt.Errorf("The job has %d wordlists, ffuf takes only one", len(j.WordListsPaths))
 	}
 
 	parts := []string{}
