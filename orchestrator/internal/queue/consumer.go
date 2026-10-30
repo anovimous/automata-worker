@@ -117,6 +117,14 @@ func (c *Consumer) Ack(msg amqp.Delivery) error {
 	return nil
 }
 
+// Nack gives a message back to RabbitMQ; with requeue it goes back on the queue for another worker.
+func (c *Consumer) Nack(msg amqp.Delivery, requeue bool) error {
+	if err := msg.Nack(false, requeue); err != nil {
+		return fmt.Errorf("failed to nack message: %w", err)
+	}
+	return nil
+}
+
 func (c *Consumer) Close() error {
 
 	if err := c.channel.Close(); err != nil {

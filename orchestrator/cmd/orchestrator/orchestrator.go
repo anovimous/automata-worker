@@ -7,7 +7,9 @@ import (
 	log "log/slog"
 	"net/http"
 	"os"
+	"os/signal"
 	"runtime"
+	"syscall"
 	"time"
 
 	"github.com/anovimous/automata-worker/orchestrator/internal/buildinfo"
@@ -20,6 +22,7 @@ import (
 	"github.com/anovimous/automata-worker/orchestrator/internal/job/socket"
 	watcherP "github.com/anovimous/automata-worker/orchestrator/internal/job/watcher"
 	"github.com/anovimous/automata-worker/orchestrator/internal/job/workdir"
+	"github.com/anovimous/automata-worker/orchestrator/internal/lifecycle"
 	mapperP "github.com/anovimous/automata-worker/orchestrator/internal/mapper"
 	queueP "github.com/anovimous/automata-worker/orchestrator/internal/queue"
 	"github.com/anovimous/automata-worker/orchestrator/internal/retry"
@@ -81,6 +84,13 @@ func run() int {
 		}()
 	}
 
+	// SIGUSR1 drains, SIGUSR2 undrains, SIGTERM/SIGINT shut down now (docs/telemetry-contract.md §5); listened to
+	// from the start, so that a stop during the setup is a clean exit too
+	sigs := make(chan os.Signal, 4)
+	signal.Notify(sigs, syscall.SIGTERM, syscall.SIGINT, syscall.SIGUSR1, syscall.SIGUSR2)
+	ctrl := lifecycle.New(context.Background(), sigs, os.Exit, tracker.SetDraining, tracker.SetShuttingDown)
+	shutdownCtx := ctrl.ShutdownContext()
+
 	// Load mapping config internally into the mapper
 	mapper, err := mapperP.Load()
 	if err != nil {
@@ -107,7 +117,10 @@ func run() int {
 	// Create Poller and Informer; their results show in the status as the core's
 	poller := pollerP.New(cfg.Central.BaseURL, cfg.Central.StateEndpoint, cfg.Central.PollInterval)
 	poller.Observe(func(err error) { tracker.DependencyResult(telemetry.DepCore, err) })
-	informer := observedInformer{informer: informerP.New(cfg.Central.BaseURL, cfg.Central.OutcomeEndpoint), recorder: tracker}
+	centralInformer := informerP.New(cfg.Central.BaseURL, cfg.Central.OutcomeEndpoint)
+	informer := observedInformer{informer: centralInformer, recorder: tracker}
+	// the report of a job ended by a shutdown retries less, it has to fit in Docker's stop timeout
+	shutdownInformer := observedInformer{informer: centralInformer.WithPolicy(shutdownReportPolicy, shutdownReportTimeout), recorder: tracker}
 
 	// Create Runner
 	runner := runnerP.New(cfg.Worker)
@@ -151,6 +164,13 @@ func run() int {
 	tracker.SetPhase(telemetry.PhaseIdle, "")
 	for {
 
+		// no job runs here: a drain or a shutdown ends the worker now
+		if exit, phase := shouldExit(ctrl, shutdownCtx); exit {
+			tracker.SetPhase(phase, "")
+			log.Info("exiting", "phase", phase)
+			return 0
+		}
+
 		msg, ok, err := consumer.Next()
 		tracker.DependencyResult(telemetry.DepRabbitMQ, err)
 		if err != nil {
@@ -159,13 +179,14 @@ func run() int {
 		}
 		if !ok {
 			tracker.Touch()
-			time.Sleep(idleQueuePollInterval)
+			waitIdle(ctrl, idleQueuePollInterval)
 			continue
 		}
 
 		// The message is acked once the job has started, or when it needs no more
-		// attempts. Until then a crash of this orchestrator puts it back on the queue.
-		ack := ackOnce(func() error { return consumer.Ack(msg) })
+		// attempts. Until then a crash of this orchestrator puts it back on the queue,
+		// and so does a shutdown (requeue).
+		settle := settleOnce(func() error { return consumer.Ack(msg) }, func(requeue bool) error { return consumer.Nack(msg, requeue) })
 
 		/* MAIN LOOP FLOW:
 		get jobId from message
@@ -188,7 +209,7 @@ func run() int {
 			if err := json.Unmarshal(msg.Body, &payload); err != nil {
 				log.Error("failed to unmarshal message payload", "error", err)
 				tracker.MessageSkipped()
-				ack()
+				settle.Ack()
 				return
 			}
 
@@ -202,7 +223,7 @@ func run() int {
 				log.Error("failed to create the work directory", "jobId", jobId, "error", err)
 				inform(informer, jobId, job.StateFailed, "failed to create the work directory of the job", job.FailurePreparation)
 				tracker.JobEnded(job.StateFailed)
-				ack()
+				settle.Ack()
 				return
 			}
 			defer func() {
@@ -213,16 +234,22 @@ func run() int {
 
 			// Download from Rustfs
 			tracker.SetDetail("DOWNLOADING_FILES")
-			detailsLocation, dataLocation, err := rustfs.DownloadJobDetailsAndData(jobId, jobDir)
+			detailsLocation, dataLocation, err := rustfs.DownloadJobDetailsAndData(shutdownCtx, jobId, jobDir)
+			if err != nil && requeueOnShutdown(shutdownCtx, settle, tracker, jobId) {
+				return
+			}
 			tracker.DependencyResult(telemetry.DepObjectStorage, err)
 			if err != nil {
 				log.Error("failed to download from rustfs the required two files", "jobId", jobId, "error", err)
 				inform(informer, jobId, job.StateFailed, "failed to download details and data files from rustfs", job.FailurePreparation)
 				tracker.JobEnded(job.StateFailed)
-				ack()
+				settle.Ack()
 				return
 			}
 			log.Info("Downloaded from rustfs")
+			if requeueOnShutdown(shutdownCtx, settle, tracker, jobId) {
+				return
+			}
 
 			// Poll initially to make sure there is not state change request
 			tracker.SetDetail("INITIAL_POLL")
@@ -232,7 +259,10 @@ func run() int {
 				log.Error("failed to poll central service", "jobId", jobId, "error", err)
 				inform(informer, jobId, job.StateFailed, "job has failed before start at initial poll due to failure to poll", job.FailurePoll)
 				tracker.JobEnded(job.StateFailed)
-				ack()
+				settle.Ack()
+				return
+			}
+			if requeueOnShutdown(shutdownCtx, settle, tracker, jobId) {
 				return
 			}
 			start, report, message := decideInitialPoll(initialPollResult.DesiredState)
@@ -244,21 +274,25 @@ func run() int {
 					inform(informer, jobId, report, message, "")
 					tracker.JobEnded(report)
 				}
-				ack()
+				settle.Ack()
 				return
 			}
 
 			// Get the wordlists of the job into the cache, after the poll so that a job which is not
 			// started does not download them
 			tracker.SetDetail("WORDLISTS")
-			wordlistsCtx, cancelWordlists := context.WithTimeout(context.Background(), wordlistDownloadTimeout)
+			// a shutdown cuts the download; the error is then a requeue, not a failure of the job
+			wordlistsCtx, cancelWordlists := context.WithTimeout(shutdownCtx, wordlistDownloadTimeout)
 			releaseWordlists, err := prepareWordlists(wordlistsCtx, wordlists, detailsLocation)
 			cancelWordlists()
+			if err != nil && requeueOnShutdown(shutdownCtx, settle, tracker, jobId) {
+				return
+			}
 			if err != nil {
 				log.Error("failed to prepare the wordlists", "jobId", jobId, "error", err)
 				inform(informer, jobId, job.StateFailed, fmt.Sprintf("failed to prepare the wordlists: %s", err), job.FailurePreparation)
 				tracker.JobEnded(job.StateFailed)
-				ack()
+				settle.Ack()
 				return
 			}
 			defer releaseWordlists()
@@ -270,7 +304,12 @@ func run() int {
 				log.Error("failed to find mapping for routineKey", "routineKey", payload.RoutineKey, "jobId", jobId, "error", err)
 				inform(informer, jobId, job.StateFailed, "failed to find mapping for routineKey", job.FailurePreparation)
 				tracker.JobEnded(job.StateFailed)
-				ack()
+				settle.Ack()
+				return
+			}
+
+			// the last moment to give the message back: from here on the job runs, and is reported
+			if requeueOnShutdown(shutdownCtx, settle, tracker, jobId) {
 				return
 			}
 
@@ -282,7 +321,7 @@ func run() int {
 				log.Error("failed to start process", "jobId", jobId, "error", err)
 				inform(informer, jobId, job.StateFailed, fmt.Sprintf("Job process failed to start at orchestrator runner.start: %s", err), job.FailureToolStart)
 				tracker.JobEnded(job.StateFailed)
-				ack()
+				settle.Ack()
 				return
 			}
 			tracker.ConnectorStarted(cfg.Worker.HeartbeatInterval, cfg.Worker.HeartbeatTimeout)
@@ -295,12 +334,16 @@ func run() int {
 
 			log.Info("Started job successfully, informing central of RUNNING state", "jobId", jobId)
 			inform(informer, jobId, job.StateRunning, "", "")
-			ack()
+			settle.Ack()
 			tracker.JobStarted()
 
 			// Accept connections on sockets
 			tracker.SetDetail("ACCEPTING_SOCKETS")
-			activeReader, activeWriter, err1, err2 := socket.AcceptConns(offReadSocket, offWriteSocket, 30)
+			activeReader, activeWriter, err1, err2 := socket.AcceptConnsContext(shutdownCtx, offReadSocket, offWriteSocket, 30)
+			if (err1 != nil || err2 != nil) && shutdownCtx.Err() != nil {
+				shutDownJob(tracker, process, shutdownInformer, jobId)
+				return
+			}
 			if err1 != nil || err2 != nil {
 				process.Terminate()
 				inform(informer, jobId, job.StateSelfTerminated, "Process didn't connect to the sockets in the required time", job.FailureToolStart)
@@ -324,6 +367,20 @@ func run() int {
 			// Start polling central-service for new state update
 			pollCh, resendPolledState := poller.Start(jobId, ctx)
 
+			// the connector sent its finish: upload the result and report the job's outcome
+			complete := func(jobResult job.JobResult) {
+				tracker.SetPhase(telemetry.PhaseFinishing, "UPLOADING_RESULT")
+				cancel()
+				finishState, finishMessage, finishCategory := completionReport(jobId, jobResult, func(jobId int, resultPath string) error {
+					err := uploadPolicy.Do(func() error { return rustfs.UploadResult(jobId, resultPath) })
+					tracker.DependencyResult(telemetry.DepObjectStorage, err)
+					return err
+				})
+				tracker.SetDetail("REPORTING")
+				inform(informer, jobId, finishState, finishMessage, finishCategory)
+				tracker.JobEnded(finishState)
+			}
+
 			// a running job that needs nothing wakes no case below, the ticker shows the loop is alive anyway
 			progress := time.NewTicker(progressInterval)
 			defer progress.Stop()
@@ -333,6 +390,17 @@ func run() int {
 				select {
 				case <-progress.C:
 					tracker.Touch()
+				case <-shutdownCtx.Done():
+					// the container is being stopped. A finish that came in at the same time holds the job's
+					// real outcome, so it goes first (select picks at random between ready cases).
+					select {
+					case jobResult := <-completionCh:
+						complete(jobResult)
+					default:
+						cancel()
+						shutDownJob(tracker, process, shutdownInformer, jobId)
+					}
+					break loop
 				case pollResult := <-pollCh:
 					tracker.Touch()
 					if stopsTheJob(pollResult.DesiredState) {
@@ -356,16 +424,7 @@ func run() int {
 				case jobResult := <-completionCh:
 					// job finished or failed
 					log.Info("ORCH case jobResult called")
-					tracker.SetPhase(telemetry.PhaseFinishing, "UPLOADING_RESULT")
-					cancel()
-					finishState, finishMessage, finishCategory := completionReport(jobId, jobResult, func(jobId int, resultPath string) error {
-						err := uploadPolicy.Do(func() error { return rustfs.UploadResult(jobId, resultPath) })
-						tracker.DependencyResult(telemetry.DepObjectStorage, err)
-						return err
-					})
-					tracker.SetDetail("REPORTING")
-					inform(informer, jobId, finishState, finishMessage, finishCategory)
-					tracker.JobEnded(finishState)
+					complete(jobResult)
 					break loop
 				case state := <-stateChangeCh:
 					// state changed internally or as a result of sending a polled state

@@ -30,20 +30,22 @@ func New(cfg config.RustFSConfig) (*Rustfs, error) {
 	return &Rustfs{client: client, cfg: cfg}, nil
 }
 
-func (r *Rustfs) DownloadJobDetailsAndData(jobId int, dir string) (detailsLocalLoc string, dataLocalLoc string, e error) {
+// DownloadJobDetailsAndData downloads the two files of the job into dir. ctx ends the downloads early (the worker
+// shuts down).
+func (r *Rustfs) DownloadJobDetailsAndData(ctx context.Context, jobId int, dir string) (detailsLocalLoc string, dataLocalLoc string, e error) {
 
 	detailsRemoteObjectName := fmt.Sprintf("details/%d.json", jobId)
 
 	detailsLocalTargetPath, dataLocalTargetPath := localPaths(dir, jobId)
 
-	err := r.client.FGetObject(context.Background(), r.cfg.JobsBucket, detailsRemoteObjectName, detailsLocalTargetPath, minio.GetObjectOptions{})
+	err := r.client.FGetObject(ctx, r.cfg.JobsBucket, detailsRemoteObjectName, detailsLocalTargetPath, minio.GetObjectOptions{})
 	if err != nil {
 		return "", "", fmt.Errorf("failed to download job DETAILS for job %d: %w", jobId, err)
 	}
 
 	dataRemoteObjectName := fmt.Sprintf("data/%d.jsonl", jobId)
 
-	err = r.client.FGetObject(context.Background(), r.cfg.JobsBucket, dataRemoteObjectName, dataLocalTargetPath, minio.GetObjectOptions{})
+	err = r.client.FGetObject(ctx, r.cfg.JobsBucket, dataRemoteObjectName, dataLocalTargetPath, minio.GetObjectOptions{})
 	if err != nil {
 		return "", "", fmt.Errorf("failed to download job DATA file for job %d: %w", jobId, err)
 	}
