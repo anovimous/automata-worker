@@ -46,6 +46,15 @@ func New(baseURL, outcomeEndpoint string) *Informer {
 	}
 }
 
+// WithPolicy returns a copy of the informer with another retry policy and request timeout, for a report that must
+// not take long (the one sent while the worker shuts down).
+func (i *Informer) WithPolicy(p retry.Policy, requestTimeout time.Duration) *Informer {
+	c := *i
+	c.retry = p
+	c.client = &http.Client{Timeout: requestTimeout}
+	return &c
+}
+
 // Inform reports the state of the job to the central service. A network error,
 // a timeout or a 5xx answer is retried with a backoff. Any other answer than
 // 204 means the central service rejected the report, which a retry can't fix,

@@ -44,6 +44,12 @@ func New(socketDir string, mode rune) (offSocket *Socket, e error) {
 }
 
 func AcceptConns(s1 *Socket, s2 *Socket, timeoutSecs int) (*Socket, *Socket, error, error) {
+	return AcceptConnsContext(context.Background(), s1, s2, timeoutSecs)
+}
+
+// AcceptConnsContext is AcceptConns that also gives up when ctx is done, so that a shutdown does not wait for the
+// whole timeout.
+func AcceptConnsContext(ctx context.Context, s1 *Socket, s2 *Socket, timeoutSecs int) (*Socket, *Socket, error, error) {
 	var (
 		wg           sync.WaitGroup
 		conn1, conn2 net.Conn
@@ -54,6 +60,19 @@ func AcceptConns(s1 *Socket, s2 *Socket, timeoutSecs int) (*Socket, *Socket, err
 
 	s1.Listener.(*net.UnixListener).SetDeadline(deadline)
 	s2.Listener.(*net.UnixListener).SetDeadline(deadline)
+
+	// a done ctx moves the deadlines to now, which ends both Accepts
+	stop, stopped := make(chan struct{}), make(chan struct{})
+	go func() {
+		defer close(stopped)
+		select {
+		case <-ctx.Done():
+			now := time.Now()
+			s1.Listener.(*net.UnixListener).SetDeadline(now)
+			s2.Listener.(*net.UnixListener).SetDeadline(now)
+		case <-stop:
+		}
+	}()
 
 	wg.Add(2)
 
@@ -68,6 +87,9 @@ func AcceptConns(s1 *Socket, s2 *Socket, timeoutSecs int) (*Socket, *Socket, err
 	}()
 
 	wg.Wait()
+	// the goroutine above must be gone before the reset, or it could set a deadline for the next job
+	close(stop)
+	<-stopped
 
 	// reset deadlines so listeners are reusable for next job
 	s1.Listener.(*net.UnixListener).SetDeadline(time.Time{})

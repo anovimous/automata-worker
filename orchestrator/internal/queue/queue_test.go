@@ -116,3 +116,44 @@ func TestNotifyClosedEndsWithoutAnErrorOnAGracefulClose(t *testing.T) {
 		t.Errorf("got %v after a graceful close, want none", err)
 	}
 }
+
+// fakeAcknowledger records the nack of a delivery.
+type fakeAcknowledger struct {
+	tag               uint64
+	multiple, requeue bool
+	nacked            int
+	err               error
+}
+
+func (f *fakeAcknowledger) Ack(tag uint64, multiple bool) error { return nil }
+
+func (f *fakeAcknowledger) Nack(tag uint64, multiple, requeue bool) error {
+	f.nacked++
+	f.tag, f.multiple, f.requeue = tag, multiple, requeue
+	return f.err
+}
+
+func (f *fakeAcknowledger) Reject(tag uint64, requeue bool) error { return nil }
+
+func TestNackGivesTheMessageBack(t *testing.T) {
+	for _, requeue := range []bool{true, false} {
+		a := &fakeAcknowledger{}
+		msg := amqp.Delivery{Acknowledger: a, DeliveryTag: 9}
+
+		if err := (&Consumer{}).Nack(msg, requeue); err != nil {
+			t.Fatalf("Nack returned an error: %v", err)
+		}
+		if a.nacked != 1 || a.tag != 9 || a.multiple || a.requeue != requeue {
+			t.Errorf("nack = %+v, want this message only, requeue %v", a, requeue)
+		}
+	}
+}
+
+func TestNackWrapsTheError(t *testing.T) {
+	failure := errors.New("channel closed")
+	msg := amqp.Delivery{Acknowledger: &fakeAcknowledger{err: failure}}
+
+	if err := (&Consumer{}).Nack(msg, true); !errors.Is(err, failure) {
+		t.Errorf("err = %v, want the wrapped error", err)
+	}
+}

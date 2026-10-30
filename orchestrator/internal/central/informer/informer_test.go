@@ -138,3 +138,39 @@ func TestAReportWithoutACategoryLeavesTheFieldOut(t *testing.T) {
 		t.Errorf("report = %s, it should not carry an empty category", written)
 	}
 }
+
+func TestWithPolicyReturnsACopyWithTheNewPolicy(t *testing.T) {
+	original := New("http://core", "/update")
+	short := retry.Policy{Attempts: 3, BaseDelay: time.Second, MaxDelay: 5 * time.Second}
+
+	copied := original.WithPolicy(short, 5*time.Second)
+
+	if copied == original {
+		t.Fatal("WithPolicy returned the same informer")
+	}
+	if copied.retry.Attempts != 3 || copied.retry.MaxDelay != 5*time.Second || copied.client.Timeout != 5*time.Second {
+		t.Errorf("copy has policy %+v and timeout %s", copied.retry, copied.client.Timeout)
+	}
+	if copied.baseURL != "http://core" || copied.endpoint != "/update" {
+		t.Errorf("copy reports to %s%s", copied.baseURL, copied.endpoint)
+	}
+	if original.retry.Attempts != maxAttempts || original.client.Timeout != requestTimeout {
+		t.Errorf("the original changed: policy %+v timeout %s", original.retry, original.client.Timeout)
+	}
+}
+
+func TestWithPolicyAppliesTheRequestTimeout(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(300 * time.Millisecond)
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer server.Close()
+	once := retry.Policy{Attempts: 1, Sleep: func(time.Duration) {}}
+
+	start := time.Now()
+	err := New(server.URL, "/update").WithPolicy(once, 50*time.Millisecond).Inform(1, job.StateSelfTerminated, "the worker was shut down", job.FailureUnknown)
+
+	if err == nil || time.Since(start) > 250*time.Millisecond {
+		t.Errorf("err = %v after %s, want a timeout after about 50ms", err, time.Since(start))
+	}
+}
