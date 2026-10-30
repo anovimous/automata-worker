@@ -62,8 +62,21 @@ type Cache struct {
 	downloader Downloader
 	retry      retry.Policy
 
-	mu     sync.Mutex
+	// mu makes the downloads one at a time; Ensure holds it for as long as they take
+	mu sync.Mutex
+
+	// pinMu guards pinned on its own, so that Stats can count the pinned files during a long download
+	pinMu  sync.Mutex
 	pinned map[string]int
+}
+
+// CacheStats is what the cache holds, for the worker's status.
+type CacheStats struct {
+	Dir         string
+	Bytes       int64
+	Files       int
+	MaxBytes    int64
+	PinnedFiles int
 }
 
 // New makes the cache directory if it is missing and removes the half downloaded files an earlier run
@@ -128,12 +141,16 @@ func validate(ref Ref) error {
 }
 
 func (c *Cache) pin(refs []Ref) {
+	c.pinMu.Lock()
+	defer c.pinMu.Unlock()
 	for _, ref := range refs {
 		c.pinned[ref.Sha256]++
 	}
 }
 
 func (c *Cache) unpin(refs []Ref) {
+	c.pinMu.Lock()
+	defer c.pinMu.Unlock()
 	for _, ref := range refs {
 		if c.pinned[ref.Sha256] <= 1 {
 			delete(c.pinned, ref.Sha256)
@@ -141,6 +158,31 @@ func (c *Cache) unpin(refs []Ref) {
 			c.pinned[ref.Sha256]--
 		}
 	}
+}
+
+func (c *Cache) isPinned(sha string) bool {
+	c.pinMu.Lock()
+	defer c.pinMu.Unlock()
+	return c.pinned[sha] > 0
+}
+
+// Stats sums the files in the cache directory (the half downloaded ones are not counted). It does not wait for a
+// download in progress.
+func (c *Cache) Stats() (CacheStats, error) {
+	entries, err := os.ReadDir(c.dir)
+	if err != nil {
+		return CacheStats{}, fmt.Errorf("failed to read the wordlist cache directory %s: %w", c.dir, err)
+	}
+
+	stats := CacheStats{Dir: c.dir, MaxBytes: c.maxBytes}
+	for _, f := range filesOf(c.dir, entries) {
+		stats.Bytes += f.size
+		stats.Files++
+		if c.isPinned(f.sha) {
+			stats.PinnedFiles++
+		}
+	}
+	return stats, nil
 }
 
 func (c *Cache) pathOf(sha string) string {
@@ -249,7 +291,11 @@ func (c *Cache) cachedFiles() []cachedFile {
 		log.Error("failed to read the wordlist cache directory", "dir", c.dir, "error", err)
 		return nil
 	}
+	return filesOf(c.dir, entries)
+}
 
+// filesOf keeps the complete wordlist files of a directory listing: named by a sha256 and regular.
+func filesOf(dir string, entries []os.DirEntry) []cachedFile {
 	var files []cachedFile
 	for _, entry := range entries {
 		if !sha256Pattern.MatchString(entry.Name()) {
@@ -259,7 +305,7 @@ func (c *Cache) cachedFiles() []cachedFile {
 		if err != nil || !info.Mode().IsRegular() {
 			continue
 		}
-		files = append(files, cachedFile{path: filepath.Join(c.dir, entry.Name()), sha: entry.Name(), size: info.Size(), modTime: info.ModTime()})
+		files = append(files, cachedFile{path: filepath.Join(dir, entry.Name()), sha: entry.Name(), size: info.Size(), modTime: info.ModTime()})
 	}
 	return files
 }
@@ -284,7 +330,7 @@ func (c *Cache) makeRoomFor(need int64) {
 		if total+need <= c.maxBytes {
 			return
 		}
-		if c.pinned[f.sha] > 0 {
+		if c.isPinned(f.sha) {
 			continue
 		}
 		if err := os.Remove(f.path); err != nil {

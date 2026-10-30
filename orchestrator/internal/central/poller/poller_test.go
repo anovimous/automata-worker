@@ -132,3 +132,51 @@ func TestStartDoesNotSendTheStateTheJobAlreadyHas(t *testing.T) {
 	case <-time.After(100 * time.Millisecond):
 	}
 }
+
+func TestStartGivesEveryPollResultToTheObserver(t *testing.T) {
+	var calls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// the first poll fails, the others succeed
+		if calls.Add(1) == 1 {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return
+		}
+		w.Write([]byte(`{"requestedState":"RUNNING"}`))
+	}))
+	defer server.Close()
+
+	results := make(chan error, 16)
+	p := pollerFor(server)
+	p.Observe(func(err error) {
+		select {
+		case results <- err:
+		default:
+		}
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	p.Start(3, ctx)
+
+	first, second := <-results, <-results
+	if first == nil {
+		t.Error("the failed poll was given to the observer as a success")
+	}
+	if second != nil {
+		t.Errorf("the successful poll was given as %v", second)
+	}
+}
+
+func TestStartWorksWithoutAnObserver(t *testing.T) {
+	var state atomic.Value
+	state.Store("PAUSED")
+	server := serverAnswering(&state)
+	defer server.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	ch, _ := pollerFor(server).Start(3, ctx)
+
+	if info := next(t, ch); info.DesiredState != job.StatePaused {
+		t.Errorf("info = %+v, want PAUSED", info)
+	}
+}

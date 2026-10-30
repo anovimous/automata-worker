@@ -6,10 +6,29 @@ import (
 	"os"
 
 	"github.com/anovimous/automata-worker/orchestrator/internal/job"
+	"github.com/anovimous/automata-worker/orchestrator/internal/telemetry"
 )
 
 type stateInformer interface {
 	Inform(jobId int, state job.JobState, message string, category job.FailureCategory) error
+}
+
+// dependencyRecorder is what the wrappers below need of the telemetry tracker.
+type dependencyRecorder interface {
+	DependencyResult(d telemetry.Dependency, err error)
+}
+
+// observedInformer is an informer whose results also go to the worker's status, as the results of talking to the
+// core.
+type observedInformer struct {
+	informer stateInformer
+	recorder dependencyRecorder
+}
+
+func (o observedInformer) Inform(jobId int, state job.JobState, message string, category job.FailureCategory) error {
+	err := o.informer.Inform(jobId, state, message, category)
+	o.recorder.DependencyResult(telemetry.DepCore, err)
+	return err
 }
 
 // inform reports a state to the central service. The informer has already

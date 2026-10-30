@@ -70,3 +70,49 @@ func TestQueueIsDeclaredAsTheCoreDeclaresIt(t *testing.T) {
 		t.Errorf("arguments = %v, want only x-max-priority", args)
 	}
 }
+
+// fakeCloser hands out a channel the test controls, like amqp's NotifyClose.
+type fakeCloser struct {
+	ch chan *amqp.Error
+}
+
+func (f *fakeCloser) NotifyClose(receiver chan *amqp.Error) chan *amqp.Error {
+	f.ch = receiver
+	return receiver
+}
+
+func TestNotifyClosedMergesTheConnectionAndTheChannel(t *testing.T) {
+	conn, channel := &fakeCloser{}, &fakeCloser{}
+	c := &Consumer{closers: []closeNotifier{conn, channel}}
+
+	closed := c.NotifyClosed()
+	channel.ch <- &amqp.Error{Code: 406, Reason: "PRECONDITION_FAILED"}
+	conn.ch <- &amqp.Error{Code: 320, Reason: "CONNECTION_FORCED"}
+	close(channel.ch)
+	close(conn.ch)
+
+	var reasons []string
+	for err := range closed {
+		var amqpErr *amqp.Error
+		if !errors.As(err, &amqpErr) {
+			t.Fatalf("err = %v, want an *amqp.Error", err)
+		}
+		reasons = append(reasons, amqpErr.Reason)
+	}
+	if len(reasons) != 2 {
+		t.Errorf("errors = %v, want one for the channel and one for the connection", reasons)
+	}
+}
+
+func TestNotifyClosedEndsWithoutAnErrorOnAGracefulClose(t *testing.T) {
+	conn, channel := &fakeCloser{}, &fakeCloser{}
+	c := &Consumer{closers: []closeNotifier{conn, channel}}
+
+	closed := c.NotifyClosed()
+	close(conn.ch)
+	close(channel.ch)
+
+	for err := range closed {
+		t.Errorf("got %v after a graceful close, want none", err)
+	}
+}
