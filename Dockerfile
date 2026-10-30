@@ -1,6 +1,10 @@
 # STAGE 1: BUILDER
 FROM golang:1.26 AS builder
 
+# what the orchestrator reports as its version and commit (internal/buildinfo)
+ARG VERSION=dev
+ARG COMMIT=unknown
+
 WORKDIR /build
 
 # Copy the workspace file and all modules
@@ -14,7 +18,9 @@ COPY --from=masser ./ ./tools/masser
 
 # Build orchestrator
 WORKDIR /build/orchestrator
-RUN go build -o /bin/orchestrator ./cmd/orchestrator
+RUN go build -ldflags "-X github.com/anovimous/automata-worker/orchestrator/internal/buildinfo.Version=${VERSION} \
+  -X github.com/anovimous/automata-worker/orchestrator/internal/buildinfo.Commit=${COMMIT}" \
+  -o /bin/orchestrator ./cmd/orchestrator
 
 # Build connectors
 WORKDIR /build/connector
@@ -27,6 +33,12 @@ RUN GOWORK=off go build -o /bin/masser .
 
 # STAGE 2: RUNNER
 FROM ubuntu:24.04
+
+ARG VERSION=dev
+ARG COMMIT=unknown
+LABEL org.opencontainers.image.version=${VERSION} \
+      org.opencontainers.image.revision=${COMMIT} \
+      org.opencontainers.image.source=https://github.com/anovimous/automata-worker
 
 # Install external tools
 RUN apt-get update && apt-get install -y ffuf tini

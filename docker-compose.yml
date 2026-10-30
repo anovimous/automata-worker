@@ -1,8 +1,12 @@
 services:
   orchestrator:
+    image: automata-worker:${WORKER_VERSION:-dev}
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        VERSION: ${WORKER_VERSION:-dev}
+        COMMIT: ${WORKER_COMMIT:-unknown}
       additional_contexts:
         masser: /home/haidar/cbr/tools/go/masser
     privileged: true
