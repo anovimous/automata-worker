@@ -51,5 +51,7 @@ COPY --from=builder /bin/masser-connector /usr/local/bin/masser-connector
 # Copy tools to runner
 COPY --from=builder /bin/masser /usr/local/bin/masser
 
+# GET /healthz of the telemetry server (TELEMETRY_ADDR); Docker runs it without the entrypoint
+HEALTHCHECK --interval=15s --timeout=5s --start-period=60s --retries=3 CMD ["/usr/local/bin/orchestrator", "healthcheck"]
 
 ENTRYPOINT ["/usr/bin/tini", "--", "orchestrator"]

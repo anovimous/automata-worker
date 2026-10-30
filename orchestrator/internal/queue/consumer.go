@@ -2,6 +2,7 @@ package queue
 
 import (
 	"fmt"
+	"sync"
 
 	"github.com/anovimous/automata-worker/orchestrator/internal/config"
 	amqp "github.com/rabbitmq/amqp091-go"
@@ -22,12 +23,18 @@ type Consumer struct {
 	connection *amqp.Connection
 	channel    *amqp.Channel
 	getter     getter
+	closers    []closeNotifier
 	queue      string
 }
 
 // getter is what Next needs of a channel, so that it can be replaced in tests.
 type getter interface {
 	Get(queue string, autoAck bool) (msg amqp.Delivery, ok bool, err error)
+}
+
+// closeNotifier is what NotifyClosed needs of the connection and of the channel.
+type closeNotifier interface {
+	NotifyClose(receiver chan *amqp.Error) chan *amqp.Error
 }
 
 type Message struct {
@@ -62,6 +69,7 @@ func New(cfg config.RabbitMQConfig) (*Consumer, error) {
 		connection: conn,
 		channel:    channel,
 		getter:     channel,
+		closers:    []closeNotifier{conn, channel},
 		queue:      cfg.Queue,
 	}, nil
 
@@ -80,6 +88,26 @@ func (c *Consumer) Next() (msg amqp.Delivery, ok bool, err error) {
 
 	return msg, ok, nil
 
+}
+
+// NotifyClosed returns a channel that gets the error each time the connection or the channel to RabbitMQ is closed
+// by one, and is closed once both are closed (a Close by this side sends no error). Call it once, before Close.
+func (c *Consumer) NotifyClosed() <-chan error {
+	out := make(chan error, len(c.closers))
+	var wg sync.WaitGroup
+	for _, n := range c.closers {
+		closed := n.NotifyClose(make(chan *amqp.Error, 1))
+		wg.Go(func() {
+			for err := range closed {
+				out <- err
+			}
+		})
+	}
+	go func() {
+		wg.Wait()
+		close(out)
+	}()
+	return out
 }
 
 func (c *Consumer) Ack(msg amqp.Delivery) error {

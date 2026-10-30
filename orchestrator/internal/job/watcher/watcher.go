@@ -10,14 +10,17 @@ import (
 // main functionality is to to track the progress of the job including checking for heartbeats
 
 type Watcher struct {
-	heartBeatTimeoutSecs int
+	heartbeatTimeout time.Duration
 }
 
 func New(heartBeatTimeoutSecs int) *Watcher {
-	return &Watcher{heartBeatTimeoutSecs: heartBeatTimeoutSecs}
+	return &Watcher{heartbeatTimeout: time.Duration(heartBeatTimeoutSecs) * time.Second}
 }
 
-func (w *Watcher) Watch(fmtMessagesCh <-chan job.JobMessage) (completionResult <-chan job.JobResult, stateUpdate <-chan job.JobState, timeout <-chan bool) {
+// Watch reads the messages of the connector until it finishes, goes silent for the heartbeat timeout or its
+// connection closes. onMessage, when not nil, is called with every message before it is handled, so that
+// others learn of the heartbeats too (they only reset the timeout here).
+func (w *Watcher) Watch(fmtMessagesCh <-chan job.JobMessage, onMessage func(job.JobMessage)) (completionResult <-chan job.JobResult, stateUpdate <-chan job.JobState, timeout <-chan bool) {
 
 	completionResultBi := make(chan job.JobResult, 1)
 	stateUpdateBi := make(chan job.JobState)
@@ -34,6 +37,9 @@ func (w *Watcher) Watch(fmtMessagesCh <-chan job.JobMessage) (completionResult <
 					return
 				}
 				log.Info("message received to watcher", "messageType", msg.Typ)
+				if onMessage != nil {
+					onMessage(msg)
+				}
 				switch msg.Typ {
 				case job.MessageHeartbeat:
 					log.Info("Hearbeat received in watcher")
@@ -45,7 +51,7 @@ func (w *Watcher) Watch(fmtMessagesCh <-chan job.JobMessage) (completionResult <
 					completionResultBi <- msg.Result
 					return
 				}
-			case <-time.After(time.Duration(w.heartBeatTimeoutSecs) * time.Second):
+			case <-time.After(w.heartbeatTimeout):
 				timeoutBi <- true
 				return
 			}
