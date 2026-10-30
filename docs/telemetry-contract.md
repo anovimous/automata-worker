@@ -159,9 +159,9 @@ There is deliberately no `/metrics` (no Prometheus in this system). Everything t
 
 ## 5. Signals and exit codes
 
-Implementation status: only the exit codes are implemented (a lost queue exits with 1). The orchestrator does not
-handle the signals yet: `SIGTERM` and `SIGINT` still end it at once (Go's default action, the job is left to
-`LOSTCONTACT`), and `SIGUSR1` and `SIGUSR2` are ignored, so a drain request does nothing.
+The code is `orchestrator/internal/lifecycle` (the signals) and the shutdown helpers of
+`orchestrator/cmd/orchestrator/shutdown.go`. Before `RUNNING` was reported, the downloads of the job's files and
+wordlists stop on a shutdown, and the message goes back to the queue.
 
 `tini` forwards signals to the orchestrator only. The connector and the tool are never signalled directly by
 Docker; the orchestrator deals with them.
