@@ -11,9 +11,18 @@ services:
         masser: /home/haidar/cbr/tools/go/masser
     privileged: true
     network_mode: host
+    # exit code 1 is a fatal error (config, lost queue) and is restarted; 0 is a clean exit
+    restart: on-failure:5
+    # room for the worker to end a running job and report it before Docker kills it
+    stop_grace_period: 60s
     env_file:
       - ./orchestrator/.env
     environment:
+      # the telemetry of the worker (docs/telemetry-contract.md); a second worker on this host needs its own
+      # WORKER_ID, telemetry port, cache volume and a socket directory outside /var/tmp
+      WORKER_ID: "${WORKER_ID:-compose-worker-1}"
+      TELEMETRY_ADDR: "127.0.0.1:9464"
+      LOG_FORMAT: "json"
       # the files of the wordlists are downloaded from this bucket and kept in the cache directory
       RUSTFS_WORDLISTS_BUCKET: wordlists
       WORDLIST_CACHE_DIR: /var/cache/automata/wordlists
