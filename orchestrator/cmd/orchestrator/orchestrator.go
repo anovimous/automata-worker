@@ -44,6 +44,8 @@ func main() {
 		log.Error("failed to load config", "error", err)
 		os.Exit(1)
 	}
+	// from here on every record carries the worker id (errors of the config above use the default logger)
+	log.SetDefault(newLogger(cfg.Telemetry.LogFormat, cfg.Telemetry.WorkerID, os.Stderr))
 
 	// Load mapping config internally into the mapper
 	mapper, err := mapperP.Load()
@@ -127,7 +129,7 @@ func main() {
 		start the poller
 		start the watcher
 		*/
-		fmt.Printf("Entered messages loop\n")
+		log.Debug("entered the message loop")
 		func() {
 			// Decode message payload into JSON and extract jobId
 			var payload queueP.Message
