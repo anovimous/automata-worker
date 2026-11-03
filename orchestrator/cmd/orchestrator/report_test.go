@@ -112,36 +112,77 @@ func TestFailedAndCanceledJobsUploadNothingAndKeepTheirState(t *testing.T) {
 	}
 }
 
-func TestAckOnceAcksOnlyTheFirstTime(t *testing.T) {
-	calls := 0
-	ack := ackOnce(func() error { calls++; return nil })
+// countingSettler is a settler whose ack and nack count their calls.
+func countingSettler(err error) (s *settler, acks, nacks *int, requeued *bool) {
+	acks, nacks, requeued = new(int), new(int), new(bool)
+	s = settleOnce(
+		func() error { *acks++; return err },
+		func(requeue bool) error { *nacks++; *requeued = requeue; return err },
+	)
+	return s, acks, nacks, requeued
+}
 
-	ack()
-	ack()
-	ack()
+func TestSettlerAcksOnlyTheFirstTime(t *testing.T) {
+	s, acks, nacks, _ := countingSettler(nil)
 
-	if calls != 1 {
-		t.Errorf("acked %d times, want 1", calls)
+	s.Ack()
+	s.Ack()
+	s.Ack()
+
+	if *acks != 1 || *nacks != 0 {
+		t.Errorf("acked %d times, nacked %d, want one ack", *acks, *nacks)
 	}
 }
 
-func TestAckOnceDoesNotTryAgainAfterAFailure(t *testing.T) {
-	calls := 0
-	ack := ackOnce(func() error { calls++; return errors.New("channel closed") })
+func TestSettlerRequeuesOnlyTheFirstTime(t *testing.T) {
+	s, acks, nacks, requeued := countingSettler(nil)
 
-	ack()
-	ack()
+	s.Requeue()
+	s.Requeue()
 
-	if calls != 1 {
-		t.Errorf("tried %d times, want 1", calls)
+	if *nacks != 1 || !*requeued || *acks != 0 {
+		t.Errorf("nacked %d times (requeue %v), acked %d, want one nack with requeue", *nacks, *requeued, *acks)
 	}
 }
 
-func TestAckOnceDoesNothingUntilCalled(t *testing.T) {
-	calls := 0
-	ackOnce(func() error { calls++; return nil })
+func TestSettlerAckAfterARequeueDoesNothing(t *testing.T) {
+	s, acks, nacks, _ := countingSettler(nil)
 
-	if calls != 0 {
-		t.Errorf("acked %d times before the call", calls)
+	s.Requeue()
+	s.Ack()
+
+	if *acks != 0 || *nacks != 1 {
+		t.Errorf("acked %d, nacked %d, want only the requeue", *acks, *nacks)
+	}
+}
+
+func TestSettlerRequeueAfterAnAckDoesNothing(t *testing.T) {
+	s, acks, nacks, _ := countingSettler(nil)
+
+	s.Ack()
+	s.Requeue()
+
+	if *acks != 1 || *nacks != 0 {
+		t.Errorf("acked %d, nacked %d, want only the ack", *acks, *nacks)
+	}
+}
+
+func TestSettlerDoesNotTryAgainAfterAFailure(t *testing.T) {
+	s, acks, nacks, _ := countingSettler(errors.New("channel closed"))
+
+	s.Ack()
+	s.Ack()
+	s.Requeue()
+
+	if *acks != 1 || *nacks != 0 {
+		t.Errorf("acked %d, nacked %d, want one attempt", *acks, *nacks)
+	}
+}
+
+func TestSettlerDoesNothingUntilCalled(t *testing.T) {
+	_, acks, nacks, _ := countingSettler(nil)
+
+	if *acks != 0 || *nacks != 0 {
+		t.Errorf("acked %d, nacked %d before any call", *acks, *nacks)
 	}
 }

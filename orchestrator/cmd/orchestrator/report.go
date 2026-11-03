@@ -6,10 +6,29 @@ import (
 	"os"
 
 	"github.com/anovimous/automata-worker/orchestrator/internal/job"
+	"github.com/anovimous/automata-worker/orchestrator/internal/telemetry"
 )
 
 type stateInformer interface {
 	Inform(jobId int, state job.JobState, message string, category job.FailureCategory) error
+}
+
+// dependencyRecorder is what the wrappers below need of the telemetry tracker.
+type dependencyRecorder interface {
+	DependencyResult(d telemetry.Dependency, err error)
+}
+
+// observedInformer is an informer whose results also go to the worker's status, as the results of talking to the
+// core.
+type observedInformer struct {
+	informer stateInformer
+	recorder dependencyRecorder
+}
+
+func (o observedInformer) Inform(jobId int, state job.JobState, message string, category job.FailureCategory) error {
+	err := o.informer.Inform(jobId, state, message, category)
+	o.recorder.DependencyResult(telemetry.DepCore, err)
+	return err
 }
 
 // inform reports a state to the central service. The informer has already
@@ -49,21 +68,38 @@ func completionReport(jobId int, result job.JobResult, upload func(jobId int, re
 	return job.StateFinished, result.Message, ""
 }
 
-// ackOnce returns a function which acks a message the first time it is called
-// and does nothing after, since the paths of the main loop that end a message
-// are many and a message can only be acked once. A failure to ack is logged: the
-// message then comes back, and the initial poll skips it.
-func ackOnce(ack func() error) func() {
-	done := false
+// settler settles a message once: the paths of the main loop that end a message are many, and a message can be
+// acked or rejected only once. It is used by the main loop alone.
+type settler struct {
+	ack     func() error
+	nack    func(requeue bool) error
+	settled bool
+}
 
-	return func() {
-		if done {
-			return
-		}
-		done = true
+func settleOnce(ack func() error, nack func(requeue bool) error) *settler {
+	return &settler{ack: ack, nack: nack}
+}
 
-		if err := ack(); err != nil {
-			log.Error("failed to ack the message", "error", err)
-		}
+// Ack acks the message, the first time only. A failure is logged: the message then comes back, and the initial poll
+// skips it.
+func (s *settler) Ack() {
+	if s.settled {
+		return
+	}
+	s.settled = true
+	if err := s.ack(); err != nil {
+		log.Error("failed to ack the message", "error", err)
+	}
+}
+
+// Requeue puts the message back on the queue for another worker, the first time only. A failure is logged: the
+// broker requeues an unsettled message anyway once the connection closes.
+func (s *settler) Requeue() {
+	if s.settled {
+		return
+	}
+	s.settled = true
+	if err := s.nack(true); err != nil {
+		log.Error("failed to put the message back on the queue", "error", err)
 	}
 }

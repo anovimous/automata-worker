@@ -21,6 +21,7 @@ type Poller struct {
 	endpoint string
 	interval time.Duration
 	client   *http.Client
+	observe  func(err error)
 }
 
 type PollInfo struct {
@@ -55,6 +56,12 @@ func (p *Poller) SinglePoll(jobId int) (PollInfo, error) {
 	return info, nil
 }
 
+// Observe gives fn the result of every poll that Start makes, nil for a success: Start does nothing else with a
+// failure (the next poll comes soon), and the worker's status shows them. Call it before Start.
+func (p *Poller) Observe(fn func(err error)) {
+	p.observe = fn
+}
+
 // Start polls the central service until ctx is done and sends the desired state
 // of the job each time it differs from the last one it sent. The returned
 // function makes the poller forget what it sent, so the desired state is sent
@@ -78,6 +85,9 @@ func (p *Poller) Start(jobId int, ctx context.Context) (<-chan PollInfo, func())
 				return
 			case <-ticker.C:
 				info, err := p.SinglePoll(jobId)
+				if p.observe != nil {
+					p.observe(err)
+				}
 				if err != nil {
 					continue
 				}

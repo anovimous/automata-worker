@@ -488,3 +488,129 @@ func TestRefNamesTheWordlistForAMessage(t *testing.T) {
 		t.Errorf("String = %q", got)
 	}
 }
+
+func TestStatsOfAnEmptyCache(t *testing.T) {
+	c, dir := newCache(t, 1<<20, &fakeDownloader{})
+
+	stats, err := c.Stats()
+	if err != nil {
+		t.Fatalf("Stats returned an error: %v", err)
+	}
+	if want := (CacheStats{Dir: dir, MaxBytes: 1 << 20}); stats != want {
+		t.Errorf("stats = %+v, want %+v", stats, want)
+	}
+}
+
+func TestStatsCountsTheFilesAndThePinnedOnes(t *testing.T) {
+	a, b := refOf(1, "admin\n"), refOf(2, "login\nlogout\n")
+	d := &fakeDownloader{objects: map[int64][]byte{1: []byte("admin\n"), 2: []byte("login\nlogout\n")}}
+	c, _ := newCache(t, 1<<20, d)
+
+	_, releaseA, err := c.Ensure(context.Background(), []Ref{a})
+	if err != nil {
+		t.Fatal(err)
+	}
+	releaseA()
+	_, releaseB, err := c.Ensure(context.Background(), []Ref{b})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	stats, err := c.Stats()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stats.Files != 2 || stats.Bytes != a.SizeBytes+b.SizeBytes || stats.PinnedFiles != 1 {
+		t.Errorf("stats = %+v, want 2 files of %d bytes, 1 pinned", stats, a.SizeBytes+b.SizeBytes)
+	}
+
+	releaseB()
+	if stats, _ := c.Stats(); stats.PinnedFiles != 0 {
+		t.Errorf("pinned files after release = %d, want 0", stats.PinnedFiles)
+	}
+}
+
+func TestStatsLeavesOutPartialAndForeignFiles(t *testing.T) {
+	c, dir := newCache(t, 1<<20, &fakeDownloader{})
+	sha := strings.Repeat("a", 64)
+	for name, content := range map[string]string{sha: "123", sha + ".part-1": "12345", "notes.txt": "1234567"} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.Mkdir(filepath.Join(dir, strings.Repeat("b", 64)), 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	stats, err := c.Stats()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stats.Files != 1 || stats.Bytes != 3 {
+		t.Errorf("stats = %+v, want only the complete file of 3 bytes", stats)
+	}
+}
+
+func TestStatsFailsWhenTheDirectoryIsGone(t *testing.T) {
+	c, dir := newCache(t, 1<<20, &fakeDownloader{})
+	if err := os.RemoveAll(dir); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := c.Stats(); err == nil {
+		t.Error("expected an error")
+	}
+}
+
+// blockingDownloader waits until it is let go, like a long download.
+type blockingDownloader struct {
+	started chan struct{}
+	release chan struct{}
+	content []byte
+}
+
+func (b *blockingDownloader) DownloadWordlist(ctx context.Context, id int64, w io.Writer) error {
+	close(b.started)
+	<-b.release
+	_, err := w.Write(b.content)
+	return err
+}
+
+// The status of the worker reads the stats; it must not wait for a download, which may take 20 minutes.
+func TestStatsDoesNotWaitForADownload(t *testing.T) {
+	ref := refOf(1, "admin\n")
+	d := &blockingDownloader{started: make(chan struct{}), release: make(chan struct{}), content: []byte("admin\n")}
+	c, err := New(filepath.Join(t.TempDir(), "cache"), 1<<20, d, noSleep)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ensured := make(chan error, 1)
+	go func() {
+		_, release, err := c.Ensure(context.Background(), []Ref{ref})
+		if err == nil {
+			release()
+		}
+		ensured <- err
+	}()
+	<-d.started
+
+	got := make(chan CacheStats, 1)
+	go func() {
+		stats, _ := c.Stats()
+		got <- stats
+	}()
+	select {
+	case stats := <-got:
+		if stats.Files != 0 {
+			t.Errorf("stats during the download = %+v, want no complete file yet", stats)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("Stats waited for the download")
+	}
+
+	close(d.release)
+	if err := <-ensured; err != nil {
+		t.Fatalf("Ensure returned an error: %v", err)
+	}
+}
