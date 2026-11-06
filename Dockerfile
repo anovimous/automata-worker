@@ -13,8 +13,6 @@ COPY sdk/ ./sdk/
 COPY cgroup/ ./cgroup/
 COPY orchestrator/ ./orchestrator/
 COPY connector/ ./connector/
-# Copy custom tools
-COPY --from=masser ./ ./tools/masser
 
 # Build orchestrator
 WORKDIR /build/orchestrator
@@ -27,9 +25,8 @@ WORKDIR /build/connector
 RUN go build -o /bin/ffuf-connector ./cmd/connectors/ffuf
 RUN go build -o /bin/masser-connector ./cmd/connectors/masser
 
-# Build custom tools (not part of the workspace)
-WORKDIR /build/tools/masser
-RUN GOWORK=off go build -o /bin/masser .
+# Install masser from its own repository (not part of the workspace)
+RUN GOWORK=off GOBIN=/bin go install github.com/anovimous/masser@latest
 
 # STAGE 2: RUNNER
 FROM ubuntu:24.04

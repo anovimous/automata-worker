@@ -7,8 +7,6 @@ services:
       args:
         VERSION: ${WORKER_VERSION:-dev}
         COMMIT: ${WORKER_COMMIT:-unknown}
-      additional_contexts:
-        masser: /home/haidar/cbr/tools/go/masser
     privileged: true
     network_mode: host
     # exit code 1 is a fatal error (config, lost queue) and is restarted; 0 is a clean exit

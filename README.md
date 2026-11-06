@@ -10,35 +10,10 @@ Status: working end to end on a developer machine, one job at a time per orchest
 
 | Repo | Role | Stack |
 |---|---|---|
-| `automata` (`code/automata`) | Core service: REST API, domain, job engine, scheduler | Spring Boot 3.5, Java 21 |
+| `automata` | Monorepo of the rest of Automata: `core/` (REST API, domain, job engine, scheduler), `ui/` (frontend), `mcp/` (MCP server for the AI agent). Its `docker-compose.yml` runs the core with PostgreSQL, RabbitMQ and RustFS | Spring Boot 3.5 / Java 21, React + TypeScript, Python |
 | `automata-worker` (this one) | Orchestrator that consumes queued jobs, plus the tool connectors | Go 1.26 |
-| `automata-frontend`, `automata-mcp`, Burp extension | UI, AI agent gateway, traffic ingestion | see the core README |
 
-Core and worker only talk through a documented contract (`docs/worker-contract.md` in the core repo). `contract/samples` here is a copy of the JSON samples the core's tests write, and the tests of this repo parse them with the worker's own types, so a drift on either side breaks a test.
-
----
-
-## Architecture
-
-```
- user / UI ──► Automata core ──publish──► RabbitMQ ──► orchestrator ──spawns──► connector ──► tool (ffuf / masser)
-                │    ▲                                   │  ▲                       │
-                │    └── HTTP poll / update ─────────────┘  └── unix sockets ───────┘
-                └── details + data files ──► RustFS (S3) ◄── result file ───────────┘
-```
-
-| Dir | Module | What it is |
-|---|---|---|
-| `orchestrator` | `.../orchestrator` | Long-running daemon: consumes jobs, downloads job files and wordlists, starts a connector, relays state between core and connector, uploads the result |
-| `connector` | `.../connector` | One small binary per tool (`cmd/connectors/ffuf`, `masser`). `internal/parser` reads the details file, `internal/runner` runs the tool in a cgroup and handles pause/cancel |
-| `sdk/go` | `.../sdk/go` | Library every connector uses (`sdk.New`, `IsCancelled`, `IsPaused`, `UpdateState`, `Finish`, `Fail`): talks to the orchestrator over two unix sockets and sends heartbeats; runs standalone without socket flags |
-| `cgroup` | `.../cgroup` | cgroup v2 helper (create, add pid, signal, terminate, kill, destroy) |
-| `contract` | | Samples of the core/worker payloads, checked by tests |
-
-- **RabbitMQ**: the orchestrator reads `jobs.http.queue` for `{jobId, routineKey}` messages, competing with every other orchestrator.
-- **RustFS (S3)**: reads `details/{id}.json` and `data/{id}.jsonl` from the jobs bucket, wordlists from the `wordlists` bucket, writes `{id}.result` to the results bucket.
-- **Core worker API**: polls the requested state (pause, resume, cancel) and reports every state change.
-- **Isolation**: each job runs in its own cgroup `automata/job-<id>`, the tool in a nested `tool` cgroup that can be frozen, signalled or killed as a unit.
+Core and worker only talk through a documented contract (`core/docs/worker-contract.md` in the `automata` repo). `contract/samples` here is a copy of the JSON samples the core's tests write, and the tests of this repo parse them with the worker's own types, so a drift on either side breaks a test.
 
 ---
 
@@ -67,7 +42,7 @@ Inside a connector, the runner checks the SDK state every 500 ms: **cancel** →
 
 ## Contract with the core
 
-Implicit (Java records on one side, Go structs on the other): **change both sides together**, update `docs/worker-contract.md` in the core, copy the samples (see `contract/README.md`) and fix the failing test.
+Implicit (Java records on one side, Go structs on the other): **change both sides together**, update `core/docs/worker-contract.md` in the `automata` repo, copy the samples (see `contract/README.md`) and fix the failing test.
 
 - **Queue**: `jobs.http.queue` (`x-max-priority` 2), routing key `jobs.http.ready` on `automataDirectExchange`; message `{jobId, routineKey}`.
 - **Objects**: `details/{id}.json` (`jobId, routineKey, rate, verbosity, auth, targetType, genericConfig, customConfig, wordlists`), `data/{id}.jsonl` (one request or host per line), `{id}.result`, `wordlists/{wordlistId}`. The `auth` block holds the tenant's credentials, and the connectors never see `wordlists`.
@@ -87,36 +62,66 @@ Implicit (Java records on one side, Go structs on the other): **change both side
 
 ---
 
-## Getting started
+## Deployment
 
-Prerequisites: Go 1.26, Linux with cgroup v2 and permission to create cgroups under `/sys/fs/cgroup/automata/`, `ffuf` and `masser` on `PATH`, and the core's RabbitMQ and RustFS reachable.
+A worker is deployed with Docker Compose from the root of this repo. This describes one worker on one machine; it runs one job at a time.
+
+### Prerequisites
+
+- Linux with **cgroup v2**. The worker creates a cgroup per job under `/sys/fs/cgroup/automata/`, so the container runs `privileged`.
+- Docker and Docker Compose.
+- A running Automata stack (`docker compose up` in the `automata` repo), with RabbitMQ (`5672`), RustFS (`9000`) and the core (`8080`) reachable from this machine. The stack creates the queue and the `job-configuration`, `job-results` and `wordlists` buckets.
+
+### 1. Configure
 
 ```bash
-cp .env.example orchestrator/.env          # then fill it in; never commit .env
-cd orchestrator && go build -o /dev/null ./cmd/orchestrator
-cd connector    && go build ./cmd/connectors/ffuf ./cmd/connectors/masser
-go vet ./... && go test ./...              # inside each module directory
-docker compose build && docker compose up -d
+cp .env.example orchestrator/.env      # never commit .env
 ```
 
-The container runs `privileged` with host networking so it can manage cgroups. The compose file sets the wordlist variables; when running outside Docker, set them yourself.
+Fill it in. The values below are for a worker on the same machine as the stack; the passwords are the ones in the `automata` repo's `.env`, and the user is `automata` for both RabbitMQ and RustFS.
 
-| Variable | Purpose |
+| Variable | Value |
 |---|---|
-| `RABBITMQ_URL`, `RABBITMQ_QUEUE` | Queue to consume (`jobs.http.queue`) |
-| `RUSTFS_ENDPOINT`, `RUSTFS_ACCESS_KEY`, `RUSTFS_SECRET_KEY` | Object storage |
-| `RUSTFS_JOBS_BUCKET`, `RUSTFS_RESULTS_BUCKET`, `RUSTFS_WORDLISTS_BUCKET` | `job-configuration`, `job-results`, `wordlists` |
-| `WORDLIST_CACHE_DIR` (absolute), `WORDLIST_CACHE_MAX_BYTES` | Wordlist cache, default 1.5 GB; a wrong value stops the start |
-| `CENTRAL_BASE_URL`, `CENTRAL_POLL_INTERVAL_SECONDS`, `CENTRAL_STATE_ENDPOINT`, `CENTRAL_OUTCOME_ENDPOINT` | Core worker API |
-| `WORKER_HEARTBEAT_TIMEOUT_SECONDS`, `WORKER_HEARTBEAT_INTERVAL_SECONDS`, `WORKER_SOCKET_DIR`, `TEMP_DIR` | Job supervision and scratch space |
+| `RABBITMQ_URL` | `amqp://automata:<RABBITMQ_PASSWORD>@localhost:5672/` |
+| `RABBITMQ_QUEUE` | `jobs.http.queue` |
+| `RUSTFS_ENDPOINT` | `localhost:9000` (host and port, no scheme; plain HTTP) |
+| `RUSTFS_ACCESS_KEY`, `RUSTFS_SECRET_KEY` | `automata`, `<RUSTFS_PASSWORD>` |
+| `RUSTFS_JOBS_BUCKET`, `RUSTFS_RESULTS_BUCKET` | `job-configuration`, `job-results` |
+| `CENTRAL_BASE_URL` | `http://localhost:8080` |
+| `CENTRAL_POLL_INTERVAL_SECONDS` | `5` |
+| `CENTRAL_STATE_ENDPOINT`, `CENTRAL_OUTCOME_ENDPOINT` | `/api/external/jobs/http/poll`, `/api/external/jobs/http/update` |
+| `WORKER_HEARTBEAT_TIMEOUT_SECONDS`, `WORKER_HEARTBEAT_INTERVAL_SECONDS` | `30`, `10` (the interval must be well below the timeout) |
+| `WORKER_SOCKET_DIR`, `TEMP_DIR` | `/var/tmp` |
 
-Missing numeric variables silently become 0.
+Missing numeric variables silently become 0, so leave none empty. The wordlist variables (`RUSTFS_WORDLISTS_BUCKET=wordlists`, `WORDLIST_CACHE_DIR`, an absolute path, and `WORDLIST_CACHE_MAX_BYTES`, default 1.5 GB) are set by `docker-compose.yml`; a wrong value stops the start.
+
+### 2. Run with Docker Compose
+
+```bash
+docker compose build                 # orchestrator, both connectors, ffuf and masser in one image
+docker compose up -d
+docker compose logs -f orchestrator
+docker compose down                  # stop the worker
+```
+
+The container runs `privileged` (cgroups) with host networking (so `localhost` reaches the stack), mounts `/var/tmp` for the job files and sockets, and keeps the wordlist cache in the `wordlist_cache` volume across restarts.
+
+### 3. Check
+
+Queue a `fuzz` job from the UI. The worker log shows it being taken, and the job goes `QUEUED` → `RUNNING` → `FINISHED`, with its result in the `job-results` bucket.
+
+---
+
+## Development
+
+```bash
+go vet ./... && go test ./...        # inside each module directory; there is no root module
+```
 
 ---
 
 ## Known limits
 
-- The `masser` build context in `docker-compose.yml` is an external path, so a fresh clone cannot build the image yet. Once masser is published and tagged, it will be installed with a pinned `go install ...@<tag>` instead.
-- No authentication towards the core's worker API, and some ffuf flags are still dangerous; see the review in the core repo (`.claude/components-code-review.md`).
+- No authentication towards the core's worker API, and some ffuf flags are still dangerous; see the review in the `automata` repo (`core/.claude/components-code-review.md`).
 - The ffuf connector takes its target only from `rawRequestBase64` and rejects a job with more than one wordlist.
 - A user cancel during the wordlist download is only seen by the first poll after the start.
